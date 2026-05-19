@@ -1,0 +1,13 @@
+{
+  "name": "@seta/shared-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./eslint/boundaries": {
+      "types": "./eslint/boundaries.ts",
+      "default": "./eslint/boundaries.ts"
+    }
+  }
+}
