@@ -15,9 +15,16 @@ export * from './composites/data-table';
 export * from './composites/empty-state';
 export * from './composites/filter-pill';
 export * from './composites/inbox-list';
+export * from './composites/kanban-board';
+export * from './composites/kanban-card';
+export * from './composites/kanban-column';
 export * from './composites/kbd-hint';
+export * from './composites/label-chip';
 export * from './composites/left-nav';
+export * from './composites/priority-icon';
+export * from './composites/progress-bar';
 export * from './composites/side-panel';
+export * from './composites/task-sheet';
 export * from './composites/top-bar';
 // Icons
 export * from './icons/seta-logo';
