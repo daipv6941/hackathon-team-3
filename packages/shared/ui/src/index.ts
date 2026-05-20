@@ -5,6 +5,7 @@ export * from './composites/app-shell';
 export * from './composites/chat-composer';
 export * from './composites/chat-hitl-card';
 export * from './composites/chat-message';
+export * from './composites/chat-thread-rail';
 export * from './composites/chat-tool-call';
 export * from './composites/command-palette';
 export * from './composites/copilot-panel';
