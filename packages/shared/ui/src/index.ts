@@ -7,6 +7,7 @@ export * from './composites/chat-hitl-card';
 export * from './composites/chat-message';
 export * from './composites/chat-thread-rail';
 export * from './composites/chat-tool-call';
+export * from './composites/chat-transcript';
 export * from './composites/command-palette';
 export * from './composites/copilot-panel';
 export * from './composites/data-table';
