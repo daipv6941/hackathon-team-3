@@ -6,9 +6,9 @@ import { cva, type VariantProps } from '../lib/cva';
 const cardVariants = cva('bg-surface-1 border border-hairline text-ink shadow-none', {
   variants: {
     variant: {
-      default: 'rounded-lg p-lg',
-      product: 'rounded-xl p-lg',
-      testimonial: 'rounded-lg p-xl text-body-lg',
+      default: 'rounded-md p-lg',
+      product: 'rounded-lg p-lg',
+      testimonial: 'rounded-md p-xl text-body-lg',
     },
   },
   defaultVariants: { variant: 'default' },

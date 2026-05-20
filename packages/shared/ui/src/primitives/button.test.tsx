@@ -41,7 +41,7 @@ describe('Button', () => {
 
   it('supports size variants', () => {
     render(<Button size="sm">small</Button>);
-    expect(screen.getByRole('button', { name: 'small' }).className).toMatch(/h-8|h-9/);
+    expect(screen.getByRole('button', { name: 'small' }).className).toMatch(/\bh-7\b/);
   });
 
   it('renders asChild', () => {
