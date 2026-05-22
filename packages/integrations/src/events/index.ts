@@ -33,4 +33,38 @@ export type IntegrationsEvent =
         group_id: string;
         conflict_fields: string[];
       };
+    }
+  | {
+      type: 'integrations.m365.assignee.skipped';
+      payload: {
+        tenant_id: string;
+        plan_id: string;
+        task_id: string;
+        entra_oid: string;
+        reason: 'not_provisioned';
+      };
+    }
+  | {
+      type: 'integrations.m365.task.field-conflict';
+      payload: {
+        tenant_id: string;
+        plan_id: string;
+        task_id: string;
+        external_task_id: string;
+        conflicts: Array<{ field: string; local: unknown; remote: unknown; snapshot: unknown }>;
+      };
+    }
+  | {
+      type: 'integrations.m365.plan.field-conflict';
+      payload: {
+        tenant_id: string;
+        plan_id: string;
+        conflicts: Array<{
+          scope: string;
+          field: string;
+          local: unknown;
+          remote: unknown;
+          snapshot: unknown;
+        }>;
+      };
     };
