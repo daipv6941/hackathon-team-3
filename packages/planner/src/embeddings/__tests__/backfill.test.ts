@@ -1,19 +1,12 @@
 import { resetCoreDb } from '@seta/core/internal/test-support';
-import { buildTaskSource } from '@seta/planner';
 import { closePools, ensureTenantPartition, initPools } from '@seta/shared-db';
 import { sourceHash } from '@seta/shared-embeddings';
 import { withTestDb } from '@seta/shared-testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { seedTaskForTest } from '../../../../planner/tests/helpers/seed.ts';
-import {
-  type BatchInputRow,
-  type BatchResultRow,
-  backfillTasks,
-} from '../../../src/backend/embeddings/backfill/backfill-tasks.ts';
+import { seedTaskForTest } from '../../../tests/helpers/seed.ts';
+import { type BatchInputRow, type BatchResultRow, backfillTasks } from '../backfill.ts';
+import { buildTaskSource } from '../source.ts';
 
-// ---------------------------------------------------------------------------
-// Test DB wrapper
-// ---------------------------------------------------------------------------
 function withDb<T>(fn: (ctx: { pool: import('pg').Pool }) => Promise<T>): Promise<T> {
   return withTestDb(
     {
@@ -33,14 +26,6 @@ function withDb<T>(fn: (ctx: { pool: import('pg').Pool }) => Promise<T>): Promis
   );
 }
 
-// ---------------------------------------------------------------------------
-// Fake batch helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build a fake submitBatch that stores submitted inputs and returns deterministic
- * all-zero vectors when polled.
- */
 function makeFakeBatch(dimensions = 1536): {
   submitBatch: (
     opts: { apiKey: string; model: string },
@@ -77,10 +62,6 @@ function makeFakeBatch(dimensions = 1536): {
   return { submitBatch, pollUntilDone, submittedInputs };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('backfillTasks', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -90,7 +71,6 @@ describe('backfillTasks', () => {
     await withDb(async ({ pool }) => {
       const { submitBatch, pollUntilDone } = makeFakeBatch(1536);
 
-      // Seed 2 live tasks + 1 soft-deleted in the same tenant.
       const t1 = await seedTaskForTest(pool, {
         title: 'Task one',
         description: 'First live task',
@@ -121,14 +101,14 @@ describe('backfillTasks', () => {
 
       const rows = await pool.query<{
         task_id: string;
-        chunk_ordinal: number;
+        plan_id: string;
         chunk_text: string;
         source_hash: string;
       }>(
-        `SELECT task_id, chunk_ordinal, chunk_text, source_hash
+        `SELECT task_id, plan_id, chunk_text, source_hash
            FROM planner.task_embeddings
           WHERE tenant_id = $1
-          ORDER BY task_id, chunk_ordinal`,
+          ORDER BY task_id`,
         [t1.tenant_id],
       );
 
@@ -138,8 +118,13 @@ describe('backfillTasks', () => {
       expect(taskIds).toContain(t1.task_id);
       expect(taskIds).toContain(t2.task_id);
 
+      const planByTask = new Map([
+        [t1.task_id, t1.plan_id],
+        [t2.task_id, t2.plan_id],
+      ]);
+
       for (const row of rows.rows) {
-        expect(row.chunk_ordinal).toBe(0);
+        expect(row.plan_id).toBe(planByTask.get(row.task_id));
 
         const isT1 = row.task_id === t1.task_id;
         const expectedSource = buildTaskSource(
@@ -169,7 +154,6 @@ describe('backfillTasks', () => {
         skill_tags: [],
       });
 
-      // Pre-populate the embedding for t1 with the correct hash.
       const source1 = buildTaskSource({
         title: 'Already embedded',
         description: 'This one is current',
@@ -177,7 +161,6 @@ describe('backfillTasks', () => {
       });
       const hash1 = sourceHash(source1);
 
-      // Ensure partition exists before inserting directly.
       await ensureTenantPartition(pool, {
         parent: 'planner.task_embeddings',
         embeddingColumn: 'embedding',
@@ -189,12 +172,13 @@ describe('backfillTasks', () => {
       const fakeVec = new Array<number>(1536).fill(0);
       await pool.query(
         `INSERT INTO planner.task_embeddings
-           (tenant_id, task_id, chunk_ordinal, chunk_text, source_hash, embedding, model_id, embedded_at)
-         VALUES ($1, $2, 0, $3, $4, $5::halfvec, $6, now())
+           (tenant_id, task_id, plan_id, chunk_text, source_hash, embedding, model_id, embedded_at)
+         VALUES ($1, $2, $3, $4, $5, $6::halfvec, $7, now())
          ON CONFLICT DO NOTHING`,
         [
           t1.tenant_id,
           t1.task_id,
+          t1.plan_id,
           source1,
           hash1,
           `[${fakeVec.join(',')}]`,
@@ -211,7 +195,6 @@ describe('backfillTasks', () => {
         pollUntilDone: pollUntilDone as never,
       });
 
-      // submitBatch must have been called, but only with t2 (t1 was hash-gated).
       expect(submittedInputs.length).toBeGreaterThan(0);
       const allSubmittedIds = submittedInputs.flat().map((r) => r.custom_id);
       expect(allSubmittedIds).toContain(t2.task_id);
@@ -219,11 +202,48 @@ describe('backfillTasks', () => {
     });
   });
 
+  it('backfill skips tasks whose source exceeds MAX_SOURCE_TOKENS', async () => {
+    await withDb(async ({ pool }) => {
+      const { submitBatch, pollUntilDone, submittedInputs } = makeFakeBatch(1536);
+
+      const shortTask = await seedTaskForTest(pool, {
+        title: 'short',
+        description: 'fits',
+        skill_tags: [],
+      });
+      const longTask = await seedTaskForTest(pool, {
+        tenant_id: shortTask.tenant_id,
+        title: 'long',
+        description: Array.from({ length: 1100 }, () => 'word').join(' '),
+        skill_tags: [],
+      });
+
+      await backfillTasks({
+        tenant_id: shortTask.tenant_id,
+        pool,
+        apiKey: 'test-key',
+        model: 'text-embedding-3-small',
+        submitBatch: submitBatch as never,
+        pollUntilDone: pollUntilDone as never,
+      });
+
+      const rows = await pool.query<{ task_id: string }>(
+        `SELECT task_id FROM planner.task_embeddings
+          WHERE tenant_id = $1 ORDER BY task_id`,
+        [shortTask.tenant_id],
+      );
+      expect(rows.rows.map((r) => r.task_id)).toEqual([shortTask.task_id]);
+
+      const submittedIds = submittedInputs.flat().map((r) => r.custom_id);
+      expect(submittedIds).toContain(shortTask.task_id);
+      expect(submittedIds).not.toContain(longTask.task_id);
+    });
+  });
+
   it('empty tenant: returns without calling submitBatch', async () => {
     await withDb(async ({ pool }) => {
       const { submitBatch, pollUntilDone, submittedInputs } = makeFakeBatch(1536);
 
-      // Use a soft-deleted task to get a valid tenant_id with zero live tasks.
       const seeded = await seedTaskForTest(pool, {
         title: 'Only task',
         description: null,

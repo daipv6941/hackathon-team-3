@@ -1,16 +1,14 @@
 import { resetCoreDb } from '@seta/core/internal/test-support';
-import { buildTaskSource } from '@seta/planner';
 import { closePools, initPools } from '@seta/shared-db';
 import { sourceHash } from '@seta/shared-embeddings';
 import { FakeEmbeddingProvider, withTestDb } from '@seta/shared-testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { seedTaskForTest } from '../../../planner/tests/helpers/seed.ts';
-import { embedTask } from '../../src/backend/embeddings/embed-task.ts';
+import { seedTaskForTest } from '../../../tests/helpers/seed.ts';
+import { embedTask } from '../embed-task.ts';
+import { buildTaskSource } from '../source.ts';
 
-// Helper: wrap pool in front of a fake provider so we can count embed calls.
 function makeSpy(base: FakeEmbeddingProvider) {
-  const spy = vi.spyOn(base, 'embed');
-  return spy;
+  return vi.spyOn(base, 'embed');
 }
 
 function withDb<T>(fn: (ctx: { pool: import('pg').Pool }) => Promise<T>): Promise<T> {
@@ -52,20 +50,18 @@ describe('embedTask', () => {
       );
 
       const rows = await pool.query(
-        `SELECT chunk_ordinal, source_hash, model_id
+        `SELECT plan_id, source_hash, model_id
            FROM planner.task_embeddings
-          WHERE tenant_id = $1 AND task_id = $2
-          ORDER BY chunk_ordinal`,
+          WHERE tenant_id = $1 AND task_id = $2`,
         [seeded.tenant_id, seeded.task_id],
       );
 
       expect(rows.rows).toHaveLength(1);
-      const row = rows.rows[0] as { chunk_ordinal: number; source_hash: string; model_id: string };
-      expect(row.chunk_ordinal).toBe(0);
+      const row = rows.rows[0] as { plan_id: string; source_hash: string; model_id: string };
+      expect(row.plan_id).toBe(seeded.plan_id);
       expect(row.source_hash).toMatch(/^[0-9a-f]{64}$/);
       expect(row.model_id).toBe(provider.modelId);
 
-      // Verify the stored hash matches what buildTaskSource + sourceHash produces.
       const source = buildTaskSource({
         title: 'short',
         description: 'few tokens',
@@ -92,7 +88,6 @@ describe('embedTask', () => {
       await embedTask(payload, deps);
       await embedTask(payload, deps);
 
-      // embed() batches chunks; for a single short chunk it's called once total.
       expect(embedSpy).toHaveBeenCalledTimes(1);
     });
   });
@@ -101,7 +96,6 @@ describe('embedTask', () => {
     await withDb(async ({ pool }) => {
       const provider = new FakeEmbeddingProvider();
 
-      // Seed and embed once.
       const seeded = await seedTaskForTest(pool, {
         title: 'will be deleted',
         description: 'some description',
@@ -110,19 +104,16 @@ describe('embedTask', () => {
       const payload = { tenant_id: seeded.tenant_id, task_id: seeded.task_id, event_id: 'e3' };
       await embedTask(payload, { pool, provider });
 
-      // Confirm row was inserted.
       const before = await pool.query(
         `SELECT COUNT(*)::int AS n FROM planner.task_embeddings WHERE tenant_id = $1 AND task_id = $2`,
         [seeded.tenant_id, seeded.task_id],
       );
       expect((before.rows[0] as { n: number }).n).toBeGreaterThan(0);
 
-      // Soft-delete the task.
       await pool.query(`UPDATE planner.tasks SET deleted_at = now() WHERE id = $1`, [
         seeded.task_id,
       ]);
 
-      // Call embedTask again — should delete the embedding rows.
       await embedTask(payload, { pool, provider });
 
       const after = await pool.query(
@@ -133,40 +124,116 @@ describe('embedTask', () => {
     });
   });
 
-  it('produces >= 2 rows with sequential ordinals for a long description', async () => {
+  it('skip-input-too-long: skips embedding when source exceeds MAX_SOURCE_TOKENS', async () => {
     await withDb(async ({ pool }) => {
       const provider = new FakeEmbeddingProvider();
+      const embedSpy = vi.spyOn(provider, 'embed');
 
-      // Build a description long enough to exceed 1000 tokens (~1500 words ≈ 2000 tokens).
-      const longDescription = Array.from(
-        { length: 200 },
-        (_, i) =>
-          `Paragraph ${i}: This is a detailed description of the task that includes many technical terms and explanations. The quick brown fox jumps over the lazy dog multiple times.`,
-      ).join('\n\n');
+      const longDesc = Array.from({ length: 1100 }, () => 'word').join(' ');
 
       const seeded = await seedTaskForTest(pool, {
-        title: 'Long task',
-        description: longDescription,
-        skill_tags: ['typescript', 'postgres', 'embeddings'],
+        title: 'too long',
+        description: longDesc,
+        skill_tags: [],
       });
 
       await embedTask(
-        { tenant_id: seeded.tenant_id, task_id: seeded.task_id, event_id: 'e4' },
+        { tenant_id: seeded.tenant_id, task_id: seeded.task_id, event_id: 'e1' },
         { pool, provider },
       );
 
+      expect(embedSpy).not.toHaveBeenCalled();
+
       const rows = await pool.query(
-        `SELECT chunk_ordinal FROM planner.task_embeddings
-          WHERE tenant_id = $1 AND task_id = $2
-          ORDER BY chunk_ordinal`,
+        `SELECT 1 FROM planner.task_embeddings WHERE tenant_id = $1 AND task_id = $2`,
         [seeded.tenant_id, seeded.task_id],
       );
+      expect(rows.rowCount).toBe(0);
+    });
+  });
 
-      expect(rows.rows.length).toBeGreaterThanOrEqual(2);
-      // Ordinals must be sequential starting from 0.
-      rows.rows.forEach((row: { chunk_ordinal: number }, idx: number) => {
-        expect(row.chunk_ordinal).toBe(idx);
+  it('skip-keeps-stale-row: previously-embedded row stays when source grows past the limit', async () => {
+    await withDb(async ({ pool }) => {
+      const provider = new FakeEmbeddingProvider();
+
+      const seeded = await seedTaskForTest(pool, {
+        title: 'short',
+        description: 'fits fine',
+        skill_tags: [],
       });
+
+      await embedTask(
+        { tenant_id: seeded.tenant_id, task_id: seeded.task_id, event_id: 'e1' },
+        { pool, provider },
+      );
+
+      const before = await pool.query<{ source_hash: string; embedded_at: Date }>(
+        `SELECT source_hash, embedded_at FROM planner.task_embeddings
+          WHERE tenant_id = $1 AND task_id = $2`,
+        [seeded.tenant_id, seeded.task_id],
+      );
+      expect(before.rowCount).toBe(1);
+      const beforeRow = before.rows[0]!;
+
+      const longDesc = Array.from({ length: 1100 }, () => 'word').join(' ');
+      await pool.query(`UPDATE planner.tasks SET description = $1 WHERE id = $2`, [
+        longDesc,
+        seeded.task_id,
+      ]);
+
+      await embedTask(
+        { tenant_id: seeded.tenant_id, task_id: seeded.task_id, event_id: 'e2' },
+        { pool, provider },
+      );
+
+      const after = await pool.query<{ source_hash: string; embedded_at: Date }>(
+        `SELECT source_hash, embedded_at FROM planner.task_embeddings
+          WHERE tenant_id = $1 AND task_id = $2`,
+        [seeded.tenant_id, seeded.task_id],
+      );
+      expect(after.rowCount).toBe(1);
+      expect(after.rows[0]!.source_hash).toBe(beforeRow.source_hash);
+      expect(after.rows[0]!.embedded_at.getTime()).toBe(beforeRow.embedded_at.getTime());
+    });
+  });
+
+  it('skip-recovers-when-shrunk: re-embeds once the source falls back under the limit', async () => {
+    await withDb(async ({ pool }) => {
+      const provider = new FakeEmbeddingProvider();
+
+      const longDesc = Array.from({ length: 1100 }, () => 'word').join(' ');
+      const seeded = await seedTaskForTest(pool, {
+        title: 'recover',
+        description: longDesc,
+        skill_tags: [],
+      });
+
+      await embedTask(
+        { tenant_id: seeded.tenant_id, task_id: seeded.task_id, event_id: 'e1' },
+        { pool, provider },
+      );
+      let rows = await pool.query(
+        `SELECT 1 FROM planner.task_embeddings WHERE tenant_id = $1 AND task_id = $2`,
+        [seeded.tenant_id, seeded.task_id],
+      );
+      expect(rows.rowCount).toBe(0);
+
+      await pool.query(`UPDATE planner.tasks SET description = $1 WHERE id = $2`, [
+        'now fits',
+        seeded.task_id,
+      ]);
+
+      await embedTask(
+        { tenant_id: seeded.tenant_id, task_id: seeded.task_id, event_id: 'e2' },
+        { pool, provider },
+      );
+
+      rows = await pool.query(
+        `SELECT source_hash, model_id FROM planner.task_embeddings
+          WHERE tenant_id = $1 AND task_id = $2`,
+        [seeded.tenant_id, seeded.task_id],
+      );
+      expect(rows.rowCount).toBe(1);
     });
   });
 
@@ -182,7 +249,6 @@ describe('embedTask', () => {
       const slug = seeded.tenant_id.replaceAll('-', '_');
       const partitionName = `task_embeddings_${slug}`;
 
-      // Partition must not exist before the call.
       const before = await pool.query<{ exists: boolean }>(
         `SELECT EXISTS (
            SELECT 1 FROM pg_class c
@@ -198,7 +264,6 @@ describe('embedTask', () => {
         { pool, provider },
       );
 
-      // Partition must exist after the call.
       const after = await pool.query<{ exists: boolean }>(
         `SELECT EXISTS (
            SELECT 1 FROM pg_class c
