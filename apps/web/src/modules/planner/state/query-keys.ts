@@ -1,10 +1,20 @@
 import type { ListTasksFilters } from '@seta/planner';
 
-function serializeFilters(f: ListTasksFilters): string {
+export interface MyTasksFilters {
+  planId?: string;
+  groupId?: string;
+  priority?: 1 | 3 | 5 | 9;
+  due?: 'this_week' | 'overdue' | 'no_date';
+  view?: 'list' | 'grid';
+  search?: string;
+  sort?: 'assignee_priority' | 'due_at';
+}
+
+function serializeFilters(f: Record<string, unknown>): string {
   const sortedKeys = Object.keys(f).sort();
   const sorted: Record<string, unknown> = {};
   for (const k of sortedKeys) {
-    const v = (f as Record<string, unknown>)[k];
+    const v = f[k];
     if (v === undefined) continue;
     sorted[k] = Array.isArray(v) ? v.toSorted() : v;
   }
@@ -25,10 +35,16 @@ export const plannerKeys = {
   planLabels: (id: string) => [...plannerKeys.plan(id), 'labels'] as const,
   planCategories: (id: string) => [...plannerKeys.plan(id), 'categories'] as const,
   planTasks: (id: string, filters: ListTasksFilters) =>
-    [...plannerKeys.plan(id), 'tasks', serializeFilters(filters)] as const,
+    [
+      ...plannerKeys.plan(id),
+      'tasks',
+      serializeFilters(filters as Record<string, unknown>),
+    ] as const,
   task: (id: string) => [...plannerKeys.all, 'task', id] as const,
   taskEvents: (id: string) => [...plannerKeys.task(id), 'events'] as const,
   taskChecklist: (id: string) => [...plannerKeys.task(id), 'checklist'] as const,
   myAssigned: () => [...plannerKeys.all, 'mine'] as const,
+  myTasks: (filters: MyTasksFilters) =>
+    [...plannerKeys.all, 'myTasks', serializeFilters(filters as Record<string, unknown>)] as const,
   trash: () => [...plannerKeys.all, 'trash'] as const,
 } as const;
