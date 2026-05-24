@@ -1,15 +1,17 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { closePools, getPool, initPools, runMigrations } from '@seta/shared-db';
-import { markAsTemplate, startPgContainer } from '@seta/shared-testing';
+import { ensureTemplateDb, markAsTemplate, startPgContainer } from '@seta/shared-testing';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 let handle: Awaited<ReturnType<typeof startPgContainer>> | null = null;
 
 export default async function (): Promise<() => Promise<void>> {
+  const TEMPLATE = 'seta_template_integrations';
   handle = await startPgContainer();
-  initPools({ databaseUrl: `${handle.baseUrl}/seta_template` });
+  await ensureTemplateDb(handle, TEMPLATE);
+  initPools({ databaseUrl: `${handle.baseUrl}/${TEMPLATE}` });
 
   await runMigrations({
     pool: getPool('worker'),
@@ -22,10 +24,10 @@ export default async function (): Promise<() => Promise<void>> {
   });
 
   await closePools();
-  await markAsTemplate(handle, 'seta_template');
+  await markAsTemplate(handle, TEMPLATE);
 
   process.env.SETA_TEST_PG_BASE = handle.baseUrl;
-  process.env.SETA_TEST_PG_TEMPLATE = 'seta_template';
+  process.env.SETA_TEST_PG_TEMPLATE = TEMPLATE;
   process.env.BETTER_AUTH_SECRET ??= 'test'.padEnd(32, '_');
   return async () => {
     await handle?.stop();

@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runMigrations } from '@seta/shared-db';
-import { markAsTemplate, startPgContainer } from '@seta/shared-testing';
+import { ensureTemplateDb, markAsTemplate, startPgContainer } from '@seta/shared-testing';
 import { Pool } from 'pg';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -9,10 +9,11 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 let handle: Awaited<ReturnType<typeof startPgContainer>> | null = null;
 
 export default async function (): Promise<() => Promise<void>> {
+  const TEMPLATE = 'seta_template_identity';
   handle = await startPgContainer();
+  await ensureTemplateDb(handle, TEMPLATE);
 
-  const templateUrl = `${handle.baseUrl}/seta_template`;
-  const pool = new Pool({ connectionString: templateUrl });
+  const pool = new Pool({ connectionString: `${handle.baseUrl}/${TEMPLATE}` });
   try {
     await runMigrations({
       pool,
@@ -25,10 +26,10 @@ export default async function (): Promise<() => Promise<void>> {
     await pool.end();
   }
 
-  await markAsTemplate(handle, 'seta_template');
+  await markAsTemplate(handle, TEMPLATE);
 
   process.env.SETA_TEST_PG_BASE = handle.baseUrl;
-  process.env.SETA_TEST_PG_TEMPLATE = 'seta_template';
+  process.env.SETA_TEST_PG_TEMPLATE = TEMPLATE;
   process.env.BETTER_AUTH_SECRET ??= 'test'.padEnd(32, '_');
 
   return async () => {
