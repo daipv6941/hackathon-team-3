@@ -22,6 +22,7 @@ import { useQuery } from '@tanstack/react-query';
 import { GripVertical, Info, Plus, X, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { listTenantUsers } from '../../identity/api/client';
+import { useSession } from '../../identity/components/SessionProvider';
 import { useAssignTask } from '../hooks/mutations/assign-task';
 import { useMoveToTopOfMyList } from '../hooks/mutations/move-to-top-of-my-list';
 import { useReorderTaskAssignees } from '../hooks/mutations/reorder-task-assignees';
@@ -95,10 +96,13 @@ function useUnfilteredUserCount(search: string, enabled: boolean) {
 }
 
 export function TaskDetailAssigneesCard({ task, planId, isLinkedToM365 = false }: Props) {
+  const session = useSession();
   const reorder = useReorderTaskAssignees();
   const moveToTop = useMoveToTopOfMyList();
   const assign = useAssignTask(planId);
   const unassign = useUnassignTask(planId);
+
+  const isCurrentUserAssigned = task.assignees.some((a) => a.user_id === session.user_id);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -260,14 +264,16 @@ export function TaskDetailAssigneesCard({ task, planId, isLinkedToM365 = false }
         </Popover>
       </div>
 
-      <button
-        type="button"
-        onClick={() => moveToTop.mutate({ task_id: task.id })}
-        className="mt-2.5 inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-primary-border bg-primary-tint px-2.5 py-1.5 text-caption font-semibold text-primary-ink"
-      >
-        <Zap className="size-3" />
-        Move to top of my list
-      </button>
+      {isCurrentUserAssigned && (
+        <button
+          type="button"
+          onClick={() => moveToTop.mutate({ task_id: task.id })}
+          className="mt-2.5 inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-primary-border bg-primary-tint px-2.5 py-1.5 text-caption font-semibold text-primary-ink"
+        >
+          <Zap className="size-3" />
+          Move to top of my list
+        </button>
+      )}
     </section>
   );
 }
