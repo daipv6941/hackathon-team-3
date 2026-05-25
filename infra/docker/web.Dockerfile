@@ -3,7 +3,10 @@
 # ---- builder ----
 FROM node:24-alpine AS builder
 
-RUN corepack enable
+# `git` is required by the root package.json `prepare: lefthook install`
+# script even though we don't want hooks installed in the image.
+RUN corepack enable \
+ && apk add --no-cache git
 
 WORKDIR /repo
 
@@ -14,8 +17,8 @@ COPY apps/server/package.json         apps/server/package.json
 COPY apps/cli/package.json            apps/cli/package.json
 COPY packages/                        packages/
 
-# Skip `lefthook install` — git hooks have no purpose inside an image, and
-# the alpine builder has no git binary or .git dir.
+# LEFTHOOK=0 short-circuits the `prepare: lefthook install` script so we
+# don't end up with a stray hook config in the image.
 ENV LEFTHOOK=0
 
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
