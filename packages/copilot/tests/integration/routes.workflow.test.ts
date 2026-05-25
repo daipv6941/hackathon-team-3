@@ -362,6 +362,51 @@ describe('GET /api/copilot/v1/workflows/sse-token', () => {
   });
 });
 
+describe('GET /api/copilot/v1/workflows/definitions', () => {
+  it('returns 401 without a session', async () => {
+    await withCopilotTestDb(async ({ pool }) => {
+      const app = makeApp(null, makeMastra(vi.fn()), pool);
+      const res = await app.request('/api/copilot/v1/workflows/definitions');
+      expect(res.status).toBe(401);
+    });
+  });
+
+  it('returns the registered workflows from the CopilotRegistry snapshot', async () => {
+    await withCopilotTestDb(async ({ pool }) => {
+      const { CopilotRegistry } = await import('@seta/copilot-sdk');
+      const { z } = await import('zod');
+      CopilotRegistry.__resetForTests();
+      CopilotRegistry.registerWorkflow({
+        domain: 'work',
+        id: 'routes-test-wf',
+        description: 'A test workflow.',
+        inputSchema: z.object({ taskId: z.string().uuid() }),
+        outputSchema: z.object({ ok: z.boolean() }),
+        workflow: {},
+        hitlSteps: ['s1'],
+      });
+      CopilotRegistry.freeze();
+      try {
+        const me = session(['copilot.workflow.run.read.self']);
+        const app = makeApp(me, makeMastra(vi.fn()), pool);
+        const res = await app.request('/api/copilot/v1/workflows/definitions');
+        expect(res.status).toBe(200);
+        const body = (await res.json()) as {
+          rows: Array<{ id: string; domain: string; description: string; hitlSteps: string[] }>;
+        };
+        expect(body.rows).toContainEqual({
+          id: 'routes-test-wf',
+          domain: 'work',
+          description: 'A test workflow.',
+          hitlSteps: ['s1'],
+        });
+      } finally {
+        CopilotRegistry.__resetForTests();
+      }
+    });
+  });
+});
+
 describe('GET /api/copilot/v1/workflows/:workflowId/input-schema', () => {
   it('returns 401 without a session', async () => {
     await withCopilotTestDb(async ({ pool }) => {

@@ -1,7 +1,18 @@
 import { randomUUID } from 'node:crypto';
+import { RequestContext } from '@mastra/core/request-context';
 import { describe, expect, it } from 'vitest';
 import { buildMastra } from '../../src/backend/runtime.ts';
 import { withCopilotTestDb } from '../helpers.ts';
+
+// Build a requestContext.toJSON()-shaped payload from the codebase convention:
+// `actor: { user_id }` + `tenant_id`. Goes through a real RequestContext so the
+// test locks in the actual wire format that Mastra's execution engine emits.
+function rcPayload(args: { tenantId: string; startedBy: string }): Record<string, unknown> {
+  const rc = new RequestContext();
+  rc.set('actor', { type: 'user', user_id: args.startedBy });
+  rc.set('tenant_id', args.tenantId);
+  return rc.toJSON();
+}
 
 describe('lifecycle hook wiring', () => {
   it('publishing workflow.start on the global pubsub writes a workflow_runs row', async () => {
@@ -19,11 +30,7 @@ describe('lifecycle hook wiring', () => {
         data: {
           workflowId: 'copilot.test.noop',
           runId,
-          requestContext: {
-            tenantId,
-            startedBy,
-            startedVia: 'event',
-          },
+          requestContext: rcPayload({ tenantId, startedBy }),
           prevResult: { status: 'success', output: { taskTitle: 'demo' } },
         },
       });
@@ -58,7 +65,7 @@ describe('lifecycle hook wiring', () => {
         data: {
           workflowId: 'copilot.test.noop',
           runId,
-          requestContext: { tenantId, startedBy, startedVia: 'event' },
+          requestContext: rcPayload({ tenantId, startedBy }),
           prevResult: { status: 'success', output: {} },
         },
       });

@@ -21,6 +21,7 @@ import { RateLimitError, reserveTurn } from './rate-limit.ts';
 import type { SessionLike } from './types.ts';
 import { issueSseToken } from './workflows/_infra/auth-token.ts';
 import { getWorkflowInputSchema } from './workflows/_infra/input-schema-registry.ts';
+import { onLifecycleEvent } from './workflows/_infra/lifecycle-hook.ts';
 import { mountInboxSse } from './workflows/_infra/sse-inbox.ts';
 import { mountRunSse } from './workflows/_infra/sse-run.ts';
 
@@ -803,11 +804,63 @@ export function registerCopilotRoutes(app: Hono<CopilotRouteEnv>, deps: CopilotR
     requestContext.set('tenant_id', session.tenant_id);
     try {
       const run = await workflow.createRun();
-      void run.start({ inputData: body, requestContext } as never);
+      // Project the row synchronously so a GET on the returned runId never 404s,
+      // even if the user opens the deep link before Mastra's async workflow.start
+      // pubsub event reaches the lifecycle hook. The async path's INSERT is then
+      // a no-op via ON CONFLICT (run_id) DO NOTHING + workflow_run_events_seen.
+      await onLifecycleEvent(deps.pool, {
+        kind: 'run-started',
+        runId: run.runId,
+        eventSeq: -1,
+        workflowId,
+        tenantId: session.tenant_id,
+        startedBy: session.user_id,
+        startedVia: 'event',
+        parentThreadId: null,
+        parentRunId: null,
+        sourceEventId: null,
+        inputSummary: body,
+        occurredAt: new Date(),
+      });
+      const startedAt = Date.now();
+      // Surface workflow-start failures: bare `void run.start(...)` would swallow
+      // the rejection, leaving the projected row stuck in `running` forever and
+      // the UI showing "No graph data yet" with no error. Project a run-failed
+      // event so the row gets `failed` + `error_summary`.
+      void run.start({ inputData: body, requestContext } as never).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        const rawCode = (err as { code?: unknown } | null)?.code;
+        const code = typeof rawCode === 'string' ? rawCode : 'workflow_start_failed';
+        console.error('[copilot.workflow.start]', { runId: run.runId, workflowId, err });
+        void onLifecycleEvent(deps.pool, {
+          kind: 'run-failed',
+          runId: run.runId,
+          eventSeq: -2,
+          workflowId,
+          tenantId: session.tenant_id,
+          occurredAt: new Date(),
+          durationMs: Date.now() - startedAt,
+          error: { code, message },
+        }).catch((projErr) => {
+          console.error('[copilot.workflow.start.project-fail]', projErr);
+        });
+      });
       return c.json({ runId: run.runId });
     } catch (err) {
       return handleDomainError(c, err);
     }
+  });
+
+  app.get('/api/copilot/v1/workflows/definitions', async (c) => {
+    const session = c.get('session') as SessionLike | undefined;
+    if (!session) return c.json({ error: 'unauthorized', message: 'session required' }, 401);
+    const defs = CopilotRegistry.snapshot().workflows.map((w) => ({
+      id: w.id,
+      domain: w.domain,
+      description: w.description,
+      hitlSteps: w.hitlSteps ?? [],
+    }));
+    return c.json({ rows: defs });
   });
 
   app.get('/api/copilot/v1/workflows/:workflowId/input-schema', async (c) => {

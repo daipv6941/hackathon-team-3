@@ -71,3 +71,16 @@ export const DecideApprovalResponse = z.object({
 export type DecideApprovalResponse = z.infer<typeof DecideApprovalResponse>;
 
 export const SseTokenResponse = z.object({ token: z.string() });
+
+export const WorkflowDefinitionRow = z.object({
+  id: z.string(),
+  domain: z.string(),
+  description: z.string(),
+  hitlSteps: z.array(z.string()).default([]),
+});
+export type WorkflowDefinitionRow = z.infer<typeof WorkflowDefinitionRow>;
+
+export const ListWorkflowDefinitionsResponse = z.object({
+  rows: z.array(WorkflowDefinitionRow),
+});
+export type ListWorkflowDefinitionsResponse = z.infer<typeof ListWorkflowDefinitionsResponse>;

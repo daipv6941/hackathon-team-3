@@ -276,10 +276,13 @@ export function adaptMastraEvent(raw: RawMastraEvent): MastraLifecycleEvent | nu
   const occurredAt = new Date();
   const workflowId = typeof data.workflowId === 'string' ? data.workflowId : '';
   const rc = (data.requestContext ?? {}) as Record<string, unknown>;
-  const tenantId = typeof rc.tenantId === 'string' ? rc.tenantId : '';
-  const startedBy = typeof rc.startedBy === 'string' ? rc.startedBy : '';
+  // Keys match the codebase convention seeded by every caller of RequestContext.set:
+  // `tenant_id` (snake) and `actor` ({ user_id }). See sdks/copilot/src/session-context.ts.
+  const tenantId = typeof rc.tenant_id === 'string' ? rc.tenant_id : '';
+  const actor = (rc.actor ?? {}) as { user_id?: unknown };
+  const startedBy = typeof actor.user_id === 'string' ? actor.user_id : '';
   const startedVia =
-    rc.startedVia === 'chat' || rc.startedVia === 'rerun' ? rc.startedVia : 'event';
+    rc.started_via === 'chat' || rc.started_via === 'rerun' ? rc.started_via : 'event';
 
   switch (raw.type) {
     case 'workflow.start': {
@@ -293,9 +296,9 @@ export function adaptMastraEvent(raw: RawMastraEvent): MastraLifecycleEvent | nu
         tenantId,
         startedBy,
         startedVia,
-        parentThreadId: typeof rc.parentThreadId === 'string' ? rc.parentThreadId : null,
-        parentRunId: typeof rc.parentRunId === 'string' ? rc.parentRunId : null,
-        sourceEventId: typeof rc.sourceEventId === 'string' ? rc.sourceEventId : null,
+        parentThreadId: typeof rc.parent_thread_id === 'string' ? rc.parent_thread_id : null,
+        parentRunId: typeof rc.parent_run_id === 'string' ? rc.parent_run_id : null,
+        sourceEventId: typeof rc.source_event_id === 'string' ? rc.source_event_id : null,
         inputSummary: prevResult?.output ?? {},
         occurredAt,
       };

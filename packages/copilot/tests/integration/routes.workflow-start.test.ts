@@ -73,6 +73,19 @@ describe('POST /api/copilot/v1/workflows/runs/:workflowId/start', () => {
       expect(arg.inputData).toEqual({ taskId: '00000000-0000-0000-0000-000000000001' });
       expect(arg.requestContext.get('actor')).toEqual({ type: 'user', user_id: s.user_id });
       expect(arg.requestContext.get('tenant_id')).toBe(s.tenant_id);
+      // Row is projected synchronously so the inbox deep-link never 404s, even
+      // before Mastra's async workflow.start pubsub event reaches the hook.
+      const row = await pool.query(
+        `SELECT tenant_id, started_by, started_via, status FROM copilot.workflow_runs WHERE run_id = $1`,
+        [runId],
+      );
+      expect(row.rowCount).toBe(1);
+      expect(row.rows[0]).toMatchObject({
+        tenant_id: s.tenant_id,
+        started_by: s.user_id,
+        started_via: 'event',
+        status: 'running',
+      });
     });
   });
 
@@ -97,6 +110,31 @@ describe('POST /api/copilot/v1/workflows/runs/:workflowId/start', () => {
         body: JSON.stringify({}),
       });
       expect(res.status).toBe(404);
+    });
+  });
+
+  it('projects run-failed when the workflow start rejects, so the row never sticks in running', async () => {
+    await withCopilotTestDb(async ({ pool }) => {
+      const s = session();
+      const runId = randomUUID();
+      const start = vi
+        .fn()
+        .mockRejectedValue(Object.assign(new Error('boom'), { code: 'compute_failed' }));
+      const app = makeApp(s, makeMastra({ start, runId }), pool);
+      const res = await app.request('/api/copilot/v1/workflows/runs/assignBySkill/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId: '00000000-0000-0000-0000-000000000001' }),
+      });
+      expect(res.status).toBe(200);
+      // Wait for the void-Promise catch + projection to flush.
+      await new Promise((r) => setTimeout(r, 50));
+      const row = await pool.query(
+        `SELECT status, error_summary FROM copilot.workflow_runs WHERE run_id = $1`,
+        [runId],
+      );
+      expect(row.rows[0]?.status).toBe('failed');
+      expect(row.rows[0]?.error_summary).toBe('compute_failed: boom');
     });
   });
 

@@ -7,4 +7,5 @@ export const workflowsQueryKeys = {
   run: (runId: string) => [...workflowsQueryKeys.all, 'run', runId] as const,
   runSnapshot: (runId: string) => [...workflowsQueryKeys.all, 'run', runId, 'snapshot'] as const,
   pendingApprovals: () => [...workflowsQueryKeys.all, 'pending-approvals'] as const,
+  definitions: () => [...workflowsQueryKeys.all, 'definitions'] as const,
 };

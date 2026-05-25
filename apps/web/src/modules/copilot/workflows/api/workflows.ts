@@ -1,6 +1,7 @@
 import type { WorkflowRunScope } from '../state/query-keys.ts';
 import {
   DecideApprovalResponse,
+  ListWorkflowDefinitionsResponse,
   ListWorkflowRunsResponse,
   PendingApprovalsResponse,
   SseTokenResponse,
@@ -128,6 +129,13 @@ export const workflowsApi = {
     );
     if (res.status === 404) return null;
     return jsonOrThrow<Record<string, unknown>>(res);
+  },
+
+  async listDefinitions() {
+    const res = await fetch('/api/copilot/v1/workflows/definitions', {
+      credentials: 'include',
+    });
+    return jsonOrThrow(res, ListWorkflowDefinitionsResponse);
   },
 
   async issueSseToken(): Promise<string> {
