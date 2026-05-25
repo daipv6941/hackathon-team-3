@@ -51,6 +51,7 @@ export const plannerKeys = {
   task: (id: string) => [...plannerKeys.all, 'task', id] as const,
   taskEvents: (id: string) => [...plannerKeys.task(id), 'events'] as const,
   taskChecklist: (id: string) => [...plannerKeys.task(id), 'checklist'] as const,
+  taskComments: (id: string) => [...plannerKeys.task(id), 'comments'] as const,
   taskSyncStatus: (taskId: string) => [...plannerKeys.task(taskId), 'syncStatus'] as const,
   myAssigned: () => [...plannerKeys.all, 'mine'] as const,
   myTasks: (filters: MyTasksFilters) =>
