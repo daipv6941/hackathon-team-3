@@ -28,8 +28,10 @@ function describeCandidate(c: CandidateUser): string {
  * - alternates → each remaining candidate (user picks via tap)
  * - decline    → leave the task unassigned
  *
- * argsPatch keys (`assigneeUserId`) match the planner_assignTask write tool's
+ * argsPatch keys (`assigneeUserIds`) match the planner_assignTask write tool's
  * input schema so the resume path can call it directly with the user's choice.
+ * The array form lets the UI compose a multi-assign decision from the candidate
+ * pool (a planner task supports many assignees).
  */
 export function buildSuggestAssigneeCard(input: SuggestAssigneeInput): ApprovalCard {
   const items: CandidateRow[] = input.candidates.map((c) => ({
@@ -49,14 +51,19 @@ export function buildSuggestAssigneeCard(input: SuggestAssigneeInput): ApprovalC
       ? `Top suggestion: ${top.displayName} (score ${top.finalScore.toFixed(2)})`
       : 'No candidates found — leave unassigned for now?',
     details: [{ kind: 'candidateList', items }],
+    // argsPatch matches AssignDecisionSchema verbatim so the inbox decide path
+    // can forward it to run.resume() without translation.
     primary: top
-      ? { label: `Assign to ${top.displayName}`, argsPatch: { assigneeUserId: top.userId } }
+      ? {
+          label: `Assign to ${top.displayName}`,
+          argsPatch: { action: 'assign', assigneeUserIds: [top.userId] },
+        }
       : { label: 'No candidates' },
     alternates: rest.map((c) => ({
       label: `Assign to ${c.displayName}`,
-      argsPatch: { assigneeUserId: c.userId },
+      argsPatch: { action: 'assign', assigneeUserIds: [c.userId] },
     })),
-    decline: { label: 'Leave unassigned' },
+    decline: { label: 'Leave unassigned', argsPatch: { action: 'leave-unassigned' } },
     meta: {
       tenantId: input.session.tenantId,
       userId: input.session.userId,
