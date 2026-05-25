@@ -1,640 +1,516 @@
-# Copilot agent architecture
+# Agent system (copilot)
 
-*The assistant that catches duplicate tasks, suggests assignees, and routes every write through a human approval.*
+Seta's agent system is structured around a **supervisor agent** that routes user requests to domain-scoped **specialists**, each composed from a curated subset of tools surfaced by feature modules. Every write tool is gated by an explicit human-in-the-loop approval; every action is audited through the same event bus as the rest of the platform.
+
+This document explains the design by tracing one realistic workload — planner assignment assistance for a product manager — from user pain point through to implementation. The planner is used as the running example because most feature-module specialists will follow the same arc.
+
+**Related documents.** [`architecture.md`](./architecture.md) describes the surrounding platform shape (modules, event bus, identity). [`tech-stack.md`](./tech-stack.md) records the rationale for Mastra, AI SDK v6, and assistant-ui. [`creating-modules.md`](./creating-modules.md) is the module-author guide.
+
+> **Scope note.** The supervisor and the `self` specialist ship today (`packages/copilot/src/backend/agents/catalog.ts`). The planner specialist used as the worked example is the next specialist on the roadmap; every tool, event, and module surface referenced below already exists in the codebase.
 
 ---
 
-## TL;DR
+## Contents
 
-```mermaid
-graph LR
-    U[User]
-    A[Copilot]
-    P[Platform data]
-
-    U -->|asks| A
-    A -->|proposes| U
-    U -->|decides| A
-    A -->|writes| P
-    P -.signals.-> A
-
-    style A fill:#0047FF,color:#fff
-```
-
-**One sentence:** the agent proposes, the user decides, the platform records.
-
-| What ships in v1 | Value |
+| Part | Subject |
 |---|---|
-| Chat over all platform data (Work / People / Self / Meta) | One surface, no context switching |
-| **Dedup at task creation** — vector similarity + approval card | Cuts duplicate noise at the source |
-| **Skill-match assignee suggestions** — skills + load + capacity + tz | Assignment is one click, not a meeting |
-| HITL approval on every write | Audit trail by construction, no surprises |
-| Built on [Mastra](https://mastra.ai) | ~80% of the runtime is bought, not built |
+| [A. Pain point](#part-a--pain-point) | Personas, current-tool gaps |
+| [B. Use case](#part-b--use-case) | Target user story and required capabilities |
+| [C. Design](#part-c--design) | Supervisor / specialist architecture, HITL boundary, memory model, observability |
+| [D. Implementation](#part-d--implementation) | Specialist spec, tool definitions, supervisor wiring, web surface, end-to-end run |
+| [E. Production concerns](#part-e--production-concerns) | Failure modes, latency and cost budgets, extension criteria |
 
 ---
 
-## What the user sees
-
-### Scenario 1 — "Who should take this task?"
-
-User types in chat:
-
-> *who should take on the OAuth redirect task?*
-
-The assistant replies with an **approval card** in the chat thread:
-
-```
-┌─ Suggested assignees for "Fix OAuth redirect on Safari" ──────┐
-│                                                                │
-│  ● Carol      react, ts, auth     load: 2 tasks   free: 18h   │
-│               score 0.89                          [ Assign ]   │
-│                                                                │
-│  ○ Alice      react, ts, auth     load: 3 tasks   free: 12h   │
-│               score 0.85                          [ Assign ]   │
-│                                                                │
-│  ○ Bob        react, ts           load: 7 tasks   free:  5h   │
-│               score 0.65                          [ Assign ]   │
-│                                                                │
-│  [ Pick someone else… ]              [ Leave unassigned ]      │
-└────────────────────────────────────────────────────────────────┘
-```
-
-One click on `Assign` → task is assigned, audit row written, the assistant confirms inline.
-
-### Scenario 2 — "Create a task for fixing the Safari login"
-
-User types in chat:
-
-> *create a task to fix the Safari OAuth login redirect*
-
-Before the task lands, the assistant checks for duplicates and shows:
-
-```
-┌─ Looks like a possible duplicate ─────────────────────────────┐
-│                                                                │
-│  This draft is similar to existing tasks:                      │
-│                                                                │
-│  ● #142  "Safari login broken after OAuth"     score 0.91     │
-│          [ Link ▾ ]    Comment · Related · Sub-task            │
-│                                                                │
-│  ○ #98   "Login redirect loop on macOS"        score 0.78     │
-│          [ Link ▾ ]                                            │
-│                                                                │
-│  [ Create new anyway ]                       [ Cancel ]        │
-└────────────────────────────────────────────────────────────────┘
-```
-
-User clicks `Link ▾ → Comment` on #142 → a comment lands on the existing ticket, no new task is created, audit row is written.
-
----
-
-Both scenarios share the same shape:
+## Agent system at a glance
 
 ```mermaid
 flowchart LR
-    Ask[User asks] --> Propose[Assistant proposes<br/>via approval card]
-    Propose --> Decide[User decides<br/>1 click]
-    Decide --> Record[Platform records<br/>+ audit]
+    User[User in assistant-ui]
+    Sup[Supervisor agent]
+    SpecA[Specialist — self]
+    SpecB[Specialist — planner]
+    Tools[Module-owned tools]
+    Mods[Feature modules — planner, identity, knowledge, ...]
+    PG[(Postgres — copilot schema + module schemas)]
+    LLM[LLM provider]
+    HITL{Human approval}
 
-    style Propose fill:#FFC107
-    style Decide fill:#0047FF,color:#fff
-    style Record fill:#E6EEFF
+    User --> Sup
+    Sup --> SpecA
+    Sup --> SpecB
+    SpecA --> Tools
+    SpecB --> Tools
+    Tools --> HITL
+    HITL --> Mods
+    Mods --> PG
+    SpecA -. memory .- PG
+    SpecB -. memory .- PG
+    Sup --> LLM
+    SpecA --> LLM
+    SpecB --> LLM
 ```
 
-**Propose · Decide · Record** is the contract for every write the assistant performs.
+| Layer | Responsibility |
+|---|---|
+| User-facing chat | Message stream, tool-call cards, approval cards rendered by assistant-ui |
+| Agent HTTP | A single route bridges the AI SDK v6 stream protocol to Mastra |
+| Supervisor | A small routing agent that selects the appropriate specialist |
+| Specialist | Domain-scoped Mastra agent composed from approximately fifteen tools and a domain-specific system prompt |
+| Tools | Thin adapters over module domain functions, owned by the source module |
+| HITL gate | Pauses every write tool for explicit user approval before execution |
+| Modules | Perform the actual reads and mutations through their public surfaces |
+| Memory | Threads, messages, and traces persisted to the `copilot` Postgres schema, managed by Mastra |
+| Audit | Every tool call is recorded in `core.events` alongside domain events |
+
+The rest of this document explains *why* this shape — starting from a concrete user pain — and *how* it is built. Code locations for each layer are listed in §19.
 
 ---
 
-## Topology
+# Part A — Pain point
+
+## 1. Affected personas
+
+| Persona | Recurring workload |
+|---|---|
+| **Product Manager** | Weekly status compilation, re-prioritisation, and ad-hoc capacity queries across multiple ICs. Frequent context switches between board views, chat, and email. |
+| **Tech Lead / IC** | Task hygiene (closing stale items, updating status), interrupt-driven status reporting for stakeholders. |
+| **Engineering Manager** | Assigning new work to individuals with matching skills and available capacity. Frequently defaults to familiarity heuristics, under-utilising newer team members. |
+
+These workloads are information-retrieval and coordination problems mediated through chat, dashboards, and email. The latency and lossiness of these channels is the cost being optimised.
+
+## 2. Gap analysis
+
+| Existing tool | Limitation for the workloads above |
+|---|---|
+| Jira / Linear filter views | Surface items by attribute. Cannot answer intent-shaped queries such as "who is free next week with the skills required for a Stripe webhook integration". |
+| Team chat | High latency, lossy, recipient must be online. |
+| Spreadsheets | Snapshot in time; immediately stale. |
+| General-purpose LLM chat (ChatGPT, Claude.ai) | No access to tenant data, no write authority, no audit. |
+| LLM with retrieval over docs | Read-only. Cannot assign, update status, or notify. |
+
+The gap is a per-tenant agent that can read the planner, search team members by skill, propose assignments, and apply them after a one-click human approval — with the resulting action audited and the assignee notified through the existing event channels.
+
+---
+
+# Part B — Use case
+
+## 3. Target user story
 
 ```mermaid
-graph TD
-    User[User]
-    Top["<b>Top Supervisor</b><br/>routes by domain"]
-
-    Work["Work"]
-    People["People"]
-    Self["Self"]
-    Meta["Meta"]
-
-    Planner["planner"]
-    Identity["identity"]
-    SelfSpec["self"]
-    MetaSpec["meta"]
-
-    DedupWF["dedupOnCreate"]
-    AssignWF["assignBySkill"]
-
-    User --> Top
-    Top --> Work
-    Top --> People
-    Top --> Self
-    Top --> Meta
-
-    Work --> Planner
-    Work --> DedupWF
-    Work --> AssignWF
-
-    People --> Identity
-    Self --> SelfSpec
-    Meta --> MetaSpec
-
-    classDef domain fill:#0047FF,color:#fff;
-    classDef spec fill:#E6EEFF,color:#003;
-    classDef wf fill:#FFC107,color:#000;
-    class Top,Work,People,Self,Meta domain;
-    class Planner,Identity,SelfSpec,MetaSpec spec;
-    class DedupWF,AssignWF wf;
+journey
+    title PM plans the week with the planner specialist
+    section Open copilot
+      Open Seta and open the copilot panel: 5: User
+      Ask what is on my plate this week: 5: User
+      Agent returns 7 open tasks grouped by status: 5: Agent
+    section Triage
+      Ask which tasks are blocked: 5: User
+      Agent returns blocked items with blocker text: 5: Agent
+      Ask who can take TASK-101 requiring Stripe webhooks: 5: User
+      Agent searches users by skill and proposes 3 candidates: 5: Agent
+      User selects an assignee and approves: 5: User
+      Agent assigns, notifies assignee, records audit: 5: Agent
+    section Close
+      Close copilot panel: 5: User
 ```
 
-| Layer | Job | Why |
-|---|---|---|
-| **Top Supervisor** | Pick a *domain* | Routing accuracy collapses past ~10 options. Domain layer keeps it small forever. |
-| **Domain Supervisor** | Pick a specialist or invoke a workflow | Module-level coordination without polluting the top router |
-| **Module Specialist** | Run module-specific tools | Owns its writes. Reads across modules through a shared registry. |
-| **Workflow** | Multi-step deterministic flows (e.g. dedup, assign) | Reasoning is for chat; ordered side-effects belong in a workflow |
+The target end-to-end duration is approximately five minutes for the full interaction, compared with the 60–90 minutes typically required when the same workflow is performed manually across chat, board views, and email.
 
-**Design rule:** *writes are private, reads are shared.* A specialist can read timesheet capacity without bouncing the request back to a timesheet specialist — one delegation hop, clean audit trail.
+## 4. Required capabilities
 
-### Why hierarchical, not flat
-
-```mermaid
-graph TB
-    subgraph "❌ Flat — collapses at N≈10"
-        S1[Supervisor]
-        S1 --> A1[planner]
-        S1 --> B1[identity]
-        S1 --> C1[timesheet]
-        S1 --> D1[pmo]
-        S1 --> E1[hr]
-        S1 --> F1[finance]
-        S1 --> G1[knowledge]
-        S1 --> H1[...8+]
-    end
-
-    subgraph "✅ Two-level — scales to dozens"
-        S2[Top]
-        S2 --> W2[Work]
-        S2 --> P2[People]
-        S2 --> M2[Money]
-        S2 --> K2[Knowledge]
-        W2 --> a2[planner]
-        W2 --> b2[timesheet]
-        W2 --> c2[pmo]
-        P2 --> d2[identity]
-        P2 --> e2[hr]
-    end
-
-    style S1 fill:#ffcccc,color:#900
-    style S2 fill:#cce5ff,color:#003
-```
-
-| | Flat | Hierarchical |
-|---|---|---|
-| Routing prompt size | grows linearly with modules | stays small forever |
-| Routing accuracy at N=15 | ~70% | ~95% |
-| Adding a module | tunes the whole prompt | adds a sub-agent under its domain |
-
-### Tool taxonomy
-
-```mermaid
-flowchart TD
-    Tool[Tool]
-    Tool --> W["<b>Write</b><br/>always HITL<br/>owning specialist only"]
-    Tool --> R["<b>Read</b><br/>no approval<br/>owning specialist only"]
-    Tool --> X["<b>Cross-module read</b><br/>published to registry<br/>any specialist can consume<br/>RBAC re-checked at callee"]
-
-    style W fill:#FFC107
-    style R fill:#E6EEFF
-    style X fill:#CCE5FF
-```
-
-| Category | HITL | Visibility | Example |
+| Capability | Source module | Side effect | Permission slug |
 |---|---|---|---|
-| Write | ✅ | Owning specialist | `planner_assignTask`, `identity_updateMyDisplayName` |
-| Read | — | Owning specialist | `planner_getTask`, `identity_whoAmI` |
-| Cross-module read | — | Any specialist (RBAC-gated) | `timesheet_getCapacityThisWeek`, `identity_getTimezoneForUser` |
+| List my tasks | `planner` | read | `planner.task.read` |
+| Fetch task detail (blockers, dependencies) | `planner` | read | `planner.task.read` |
+| Semantic search across tasks | `planner` (embedding index) | read | `planner.task.read` |
+| Search users by skill | `identity` (user profile) | read | `identity.user.read` |
+| Propose assignment (requires approval) | `planner` | write to `planner.tasks.assignee_id` | `planner.task.assign` |
+| Notify assignee | `notifications` (event-driven projection) | write (via subscriber) | governed by event |
+| Audit every action | `core.events` | write (via outbox) | automatic |
 
 ---
 
-## How a request travels
+# Part C — Design
 
-### Read path (no approval)
+## 5. Architectural alternatives
+
+| Design | Tool catalogue per agent | Prompt cache behaviour | Routing quality | Selected |
+|---|---|---|---|---|
+| Single agent with the full tool catalogue | Grows past 50 entries as modules are added | Tool schemas in system prompt invalidate the cache on every catalogue change | Degrades as catalogue grows | No |
+| One agent per tool (router-only composition) | One tool per agent | Minimal prompt, optimal cache | No surface for domain reasoning | No |
+| **Supervisor + specialists** | Approximately 15 tools per specialist; supervisor delegates | Specialist prompt caches per session and rarely changes | Supervisor selects specialist by description; specialist selects tool by description | **Yes** |
+
+## 6. Supervisor request flow
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    participant U as User
-    participant T as Top Supervisor
-    participant D as Work Supervisor
-    participant S as planner specialist
-    participant DB as Postgres
+    participant User
+    participant Sup as Supervisor
+    participant Spec as Planner specialist
+    participant Tool as planner_assignTask
+    participant Mod as planner.assignTask
 
-    U->>T: "show task #142"
-    T->>D: route to Work
-    D->>S: delegate to planner
-    S->>DB: SELECT
-    DB-->>S: row
-    S-->>U: streamed answer
+    User->>Sup: Who can take TASK-101
+    Sup->>Sup: route decision planner
+    Sup->>Spec: delegate message and context
+    Spec->>Tool: identity_searchUsersBySkills
+    Tool-->>Spec: 3 candidates
+    Spec->>User: proposes 3 candidates streamed
+    User->>Spec: Assign to Devon
+    Spec->>Tool: planner_assignTask taskId devonId
+    Note over Tool: needsApproval is true
+    Tool-->>User: HITL approval card
+    User->>Tool: Approve
+    Tool->>Mod: assignTask with session
+    Mod-->>User: confirmation
 ```
 
-### Write path (with HITL)
+## 7. Specialist composition
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant U as User
-    participant T as Top Supervisor
-    participant W as workflow
-    participant DB as Postgres
-    participant C as Approval card
+A specialist is a Mastra `Agent` instance composed from a domain-specific system prompt, a tool subset resolved by ID at boot, a memory store, a model tier, and an LRU runtime cache:
 
-    U->>T: "create task X"
-    T->>W: invoke dedupOnCreate
-    W->>DB: vector search
-    DB-->>W: candidates
-    W->>C: suspend · emit card
-    C-->>U: render
-    U->>C: pick action
-    C->>W: resume with chosen args
-    W->>DB: INSERT · emit event
-    W-->>U: confirmation
-```
+| Ingredient | Source | Scope |
+|---|---|---|
+| System prompt | `agent-specs.ts` `instructions` field | Per specialist |
+| Tool set | `agent-specs.ts` `tools` field (resolved at boot by ID) | Per specialist |
+| Memory store | `@mastra/pg` `PostgresStore({ schemaName: 'copilot' })` | Shared store, per-thread scope |
+| Model tier | `defaultTier: 'fast' \| 'smart'` (request override permitted) | Per specialist |
+| Runtime cache | LRU keyed on the resolved role set hash | Shared across specialists |
 
-Same shape regardless of depth: any write-tool, anywhere in the tree, suspends to a card and resumes on the user's decision.
+## 8. Tool catalogue and RBAC binding
 
----
+The planner specialist composes tools owned by four modules. Tool IDs are globally unique; the contribution registry validates resolution at boot.
 
-## Two flagship workflows
+| Tool ID | Owning module | Side effect | Permission |
+|---|---|---|---|
+| `planner_getTask` | `planner` | read | `planner.task.read` |
+| `search_tasks_semantic` | `planner` | read | `planner.task.read` |
+| `planner_assignTask` | `planner` | write | `planner.task.assign` |
+| `identity_searchUsersBySkills` | `identity` | read | `identity.user.read` |
+| `match_users_to_topic` | `staffing` | read | `staffing.match.read` |
+| `core_serverTime` | `core` | read | (none) |
 
-### 🪣 Dedup on create
+The user's `effective_permissions` set, established at session creation, gates which tools are visible to the specialist at runtime. A tool whose RBAC slug the user does not hold is filtered out before the catalogue is bound to the agent.
 
-```mermaid
-flowchart LR
-    Draft[New task draft] --> Embed[Embed + vector search]
-    Embed --> Score{Similarity}
-    Score -- "no match" --> Create[Create directly]
-    Score -- "maybe / likely dup" --> Card[Approval card]
-    Card -- Create anyway --> Create
-    Card -- "Comment on #N" --> Comment[Comment, no new task]
-    Card -- "Related to #N" --> Related[Create as related]
-    Card -- "Sub-task of #N" --> Sub[Create as sub-task]
-    Card -- Cancel --> Stop[End]
+## 9. Human-in-the-loop boundary
 
-    style Card fill:#FFC107
-    style Create fill:#E6EEFF
-    style Comment fill:#E6EEFF
-    style Related fill:#E6EEFF
-    style Sub fill:#E6EEFF
-```
-
-| Aspect | Behavior |
-|---|---|
-| **Why it exists** | Duplicate tickets are silent tax: same triage three times, fragmented context, lopsided backlogs |
-| **Thresholds** | Per-tenant tunable. Loose for consulting (many similar client tickets), strict for product teams |
-| **Bulk import** | Same logic, log-only mode — no approval cards on a 1,000-row CSV |
-| **Cost** | Reads only; embedding is in-memory until the user decides |
-
-### 🎯 Skill-match assignment
-
-```mermaid
-flowchart TD
-    Task[Task needing assignee]
-    Task --> Exact["<b>Exact branch</b><br/>SQL: skills ∩ tags<br/>filtered by availability"]
-    Task --> Vector["<b>Vector branch</b><br/>user-profile embedding match"]
-
-    Exact --> Merge[Merge by user_id]
-    Vector --> Merge
-
-    Merge --> Enrich["<b>Enrich (parallel reads)</b><br/>open task count · capacity · timezone"]
-    Enrich --> Rank["<b>Rank</b><br/>weighted score, per-tenant tunable"]
-    Rank --> Card[Top-5 approval card]
-    Card --> Assign[Assign · Override · Leave unassigned]
-
-    style Card fill:#FFC107
-    style Assign fill:#E6EEFF
-```
-
-**Candidate signal sources** — every candidate carries at most five signals:
-
-```mermaid
-graph LR
-    U[Candidate user]
-    U --> S1["⚡ exact skill overlap<br/>(SQL)"]
-    U --> S2["🧭 vector similarity<br/>(pgvector)"]
-    U --> S3["📊 current load<br/>(planner read)"]
-    U --> S4["⏱ free hours this week<br/>(timesheet read)"]
-    U --> S5["🌐 timezone match<br/>(identity read)"]
-
-    S1 --> Score["weighted sum<br/>per-tenant weights"]
-    S2 --> Score
-    S3 --> Score
-    S4 --> Score
-    S5 --> Score
-
-    Score --> Final[final score]
-
-    style Score fill:#FFC107
-    style Final fill:#0047FF,color:#fff
-```
-
-**Cross-module reads in action** — the workflow doesn't know which module supplied which signal:
-
-```mermaid
-graph TB
-    WF["assignBySkill workflow"]
-    R1["planner_getOpenTaskCountForUser"]
-    R2["timesheet_getCapacityThisWeek<br/><i>(optional · future)</i>"]
-    R3["identity_getTimezoneForUser"]
-
-    WF -->|"by tool id, via registry"| R1
-    WF -->|"by tool id, via registry"| R2
-    WF -->|"by tool id, via registry"| R3
-
-    R1 --> M1[planner module]
-    R2 --> M2[timesheet module]
-    R3 --> M3[identity module]
-
-    classDef workflow fill:#FFC107
-    classDef read fill:#CCE5FF
-    classDef module fill:#E6EEFF
-    class WF workflow
-    class R1,R2,R3 read
-    class M1,M2,M3 module
-```
-
-| Aspect | Behavior |
-|---|---|
-| **Triggers** | Chat ("who should take #142"), auto-suggest after creation, planner UI button |
-| **Signals used** | Exact tag overlap · vector similarity · current load · free hours · timezone overlap |
-| **Tunable per tenant** | Score weights between the five signals |
-| **Auto-assign** | Never. Agent suggests, user assigns. Non-negotiable. |
-| **Graceful degradation** | Timesheet absent → capacity column shows `?`. No embedding → exact overlap still works. No tags → vector carries via description. |
-
----
-
-## The HITL guarantee
-
-> **Every write tool in the system requires explicit user approval. No exceptions, no "low-risk" bypasses.**
+All write tools set `needsApproval: true`. AI SDK v6 pauses the tool call; assistant-ui renders an Interactable approval card derived from the tool's input schema; the user accepts (optionally after editing arguments) or rejects.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Running
-    Running --> Suspended: write tool reached
-    Suspended --> Suspended: card visible · state persisted
-    Suspended --> Approved: user confirms (optionally overriding args)
-    Suspended --> Declined: user rejects
-    Suspended --> Expired: TTL elapsed (default 72h)
-    Approved --> Running
-    Declined --> [*]
-    Expired --> [*]
-    Running --> [*]
+    [*] --> Proposed: agent calls write tool
+    Proposed --> AwaitingApproval: needsApproval = true
+    AwaitingApproval --> Executed: user approves
+    AwaitingApproval --> Rejected: user rejects
+    Executed --> [*]: result streamed back to agent
+    Rejected --> [*]: rejection streamed back to agent
 ```
 
-**Anatomy of an approval card:**
-
-```mermaid
-graph TB
-    Card["<b>Approval card</b>"]
-    Card --> H["<b>Header</b><br/>intent · risk badge · summary"]
-    Card --> B["<b>Body (one of):</b>"]
-    Card --> A["<b>Actions</b><br/>primary · alternates · decline"]
-
-    B --> L1["Text"]
-    B --> L2["Key-value table"]
-    B --> L3["Candidate list ★"]
-    B --> L4["Diff"]
-    B --> L5["Checklist"]
-
-    style Card fill:#FFC107
-    style H fill:#fff3cd
-    style B fill:#fff3cd
-    style A fill:#fff3cd
-```
-
-| Card layout | Used by |
+| Property | Behaviour |
 |---|---|
-| **Text** | Simple confirmations |
-| **Key-value table** | Field changes |
-| **Candidate list** ★ | Dedup duplicates, assignment suggestions |
-| **Diff** | Edits to existing entities |
-| **Confirmation checklist** | Destructive operations |
+| Read tools | Execute directly without approval |
+| Write tools | Always require approval — no per-tool override |
+| Approval surface | Form rendered from input schema; arguments are editable before approval |
+| Rejection | Streamed back as a tool error; agent may re-plan |
+| Audit | Both proposed and executed calls are persisted to `core.events` |
 
-**How alternates work** — picking "Assign to Bob" instead of the top suggestion just patches the tool's arguments:
+The approval boundary is a trust contract, not a UX option: agent-driven mutations always present the proposed action to the user before commit.
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant C as Card
-    participant T as Tool (suspended)
-    Note over T: original args:<br/>{ assigneeId: "alice" }
-    U->>C: clicks "Assign to Bob"
-    C->>T: resume(modifiedArgs={ assigneeId: "bob" })
-    Note over T: runs with patched args
-```
-
-**Persistence**: cards survive refreshes, logouts, restarts. The user can act tomorrow morning on a card from this afternoon. Auto-decline after 72h with an audit row.
-
-**Audit**: every approval, decline, override, and expiry writes to the same outbox the domain events use. One unified history.
-
----
-
-## Built on Mastra
-
-We didn't write the runtime. [Mastra](https://mastra.ai) ships hierarchical supervisors, tool calling, suspension/resume for HITL, workflow orchestration, vector retrieval, and conversation memory as TypeScript primitives.
+## 10. Memory model
 
 ```mermaid
-graph LR
-    Modules["packages/&lt;module&gt;<br/>(planner, identity, …)"]
-    Registry["@seta/copilot-sdk<br/>(registry)"]
-    Engine["@seta/copilot<br/>(supervisor builder)"]
-
-    subgraph Mastra
-        MCore["Agent · Tool · Workflow"]
-        MRag["Vector retrieval"]
-        MStore["Postgres adapter<br/>(vectors + memory)"]
+flowchart TB
+    subgraph Working[Working memory — per turn]
+      W[LLM context window — recent turns and tool results]
     end
-
-    Modules --> Registry
-    Engine --> Registry
-    Engine --> MCore
-    Engine --> MStore
-    Modules --> MCore
-    Modules --> MRag
-    MRag --> MStore
-
-    classDef ours fill:#0047FF,color:#fff
-    classDef mastra fill:#FFC107,color:#000
-    class Modules,Registry,Engine ours
-    class MCore,MRag,MStore mastra
+    subgraph Session[Session memory — per thread]
+      S[mastra_messages and mastra_threads in copilot schema]
+    end
+    subgraph LongTerm[Long-term memory — cross-thread]
+      L[mastra_traces and audit in core.events]
+    end
+    W --> S
+    S --> L
 ```
 
-| What we get from Mastra | What we add |
-|---|---|
-| Agent hierarchy + delegation | Domain ↔ module mapping rules |
-| Native HITL suspend/resume | Typed approval card schema |
-| Workflow engine | Two flagship workflows + their tunables |
-| Vector retrieval + reranker | Per-tenant weights |
-| Conversation memory persistence | Module-owned registry seam |
-| OpenTelemetry traces | Dashboards + per-workflow quality metrics |
+| Layer | Lifetime | Storage | Contents |
+|---|---|---|---|
+| Working | One turn | LLM context window | Recent messages, current tool results |
+| Session | Per thread | `copilot.mastra_messages`, `copilot.mastra_threads` (managed by Mastra) | Full conversation history including tool calls |
+| Long-term | Subject to event retention | `core.events` | Tool execution audits and emitted domain events |
 
-**Boundary in one line:** modules speak to the registry, the engine reads the registry and builds Mastra agents. Neither imports the other.
+The `mastra_*` tables are owned by Mastra; their DDL is not edited by hand. They reside in the `copilot` schema so that backup and migration operations cover them with the rest of the platform. Audit is not a separate subsystem — the long-term layer above is `core.events`, persisted in the same transaction as the domain mutation, queried by event type or tool metadata.
 
 ---
 
-## Retrieval — vectors for one thing only
+# Part D — Implementation
+
+## 11. Planner specialist specification
+
+```ts
+// packages/copilot/src/backend/agents/catalog.ts (extended)
+const planner: AgentSpec = {
+  name: 'planner',
+  label: 'Planner',
+  description: 'Reads, searches, and assigns planner tasks. Proposes mutations; the user approves.',
+  instructions: PLANNER_INSTRUCTIONS,
+  tools: pickById(byId, [
+    'planner_getTask',
+    'search_tasks_semantic',
+    'planner_assignTask',
+    'identity_searchUsersBySkills',
+    'core_serverTime',
+  ]),
+  defaultTier: 'smart',
+};
+
+const supervisor: AgentSpec = {
+  // ...
+  delegates: ['self', 'planner'],
+};
+
+return [self, planner, supervisor];
+```
+
+### Tool resolution at boot
 
 ```mermaid
 flowchart LR
-    Q[Query: title + description]
-    F["SQL pre-filter<br/>(tenant · status · date)"]
-    V[pgvector ANN]
-    R[Mastra reranker]
-    Top[Top-N candidates]
-
-    Q --> F --> V --> R --> Top
-
-    style R fill:#FFC107
+    A[Module register fn] -->|agentTools array| B[ContributionRegistry]
+    B -->|flatten| C[Tool catalogue by ID]
+    C -->|buildAgentCatalog| D[indexById produces Map]
+    D -->|pickById on planner tools| E[planner spec tools]
+    E -->|buildMastra| F[Mastra Agent instance]
 ```
 
-**Vectors are a derived index, never the source of truth.** Anything that admits an exact match (IDs, status, dates, RBAC, exact tags) stays in Postgres. We use vectors for *fuzzy match that exact match would miss* — "Safari login broken" ≈ "OAuth redirect Safari", "auth experience" ≈ "OAuth specialist".
+| Failure condition | Boot outcome |
+|---|---|
+| Tool ID typo (`planner_assingTask`) | Throws `tool not registered` |
+| Tool removed from a module | Throws `tool not registered` |
+| Module disabled in `SETA_MODULES` | `pickByIdSoft` permits specialist to build without the tool; specialist runs degraded |
+| Permission slug mismatch | Rejected by contribution registry validation |
 
-**Hybrid always.** SQL filter is pushed into the same pgvector call, then Mastra's reranker produces the final order. No hand-written scoring formulas.
+## 12. Planner tool definitions
 
-**Sync is event-driven** — source of truth never gets out of step with the index:
+Tool definitions reside in `packages/planner/src/backend/agent-tools/`. Each tool is a thin adapter over a `domain/*.ts` function — the agent execution path and the HTTP execution path call the same business logic.
+
+| Tool ID | File | Wraps | RBAC | needsApproval |
+|---|---|---|---|---|
+| `planner_getTask` | `get-task.ts` | `getTask` | `planner.task.read` | false |
+| `search_tasks_semantic` | `search-tasks-semantic.ts` | `searchTasksSemantic` | `planner.task.read` | false |
+| `planner_assignTask` | `assign-task.ts` | `assignTask` | `planner.task.assign` | **true** |
+| `identity_searchUsersBySkills` | `search-users-by-skills.ts` | `searchUsersBySkills` | `identity.user.read` | false |
+
+The `planner_assignTask` definition illustrates the production shape — a `defineCopilotTool` call that binds `id`, `description`, input/output schemas, `rbac`, and `needsApproval` in a single declaration, with `execute` resolving the session from runtime context before delegating to the domain function:
+
+```ts
+export const plannerAssignTaskTool = defineCopilotTool({
+  id: 'planner_assignTask',
+  name: 'Assign Task',
+  description: 'Assign a user to a task.',
+  input: z.object({
+    taskId: z.string().uuid().describe('The task ID'),
+    assigneeUserId: z.string().uuid().describe('The user ID to assign'),
+  }),
+  output: z.object({ assignment: z.object({ taskId: z.string(), assigneeUserId: z.string() }) }),
+  rbac: 'planner.task.assign',
+  needsApproval: true,
+  execute: async (input, ctx) => {
+    const session = await buildActorSession(actorFromContext(ctx));
+    await assignTask({ task_id: input.taskId, user_id: input.assigneeUserId, session });
+    return { assignment: { taskId: input.taskId, assigneeUserId: input.assigneeUserId } };
+  },
+});
+```
+
+## 13. Supervisor wiring
+
+```ts
+// packages/copilot/src/backend/agents/catalog.ts
+export function buildAgentCatalog(deps: {
+  mastra: Mastra;
+  pool: Pool;
+  agentTools: ReadonlyArray<CopilotTool>;
+}): AgentSpecs {
+  const byId = indexById(deps.agentTools);
+  // ... self, planner specifications ...
+  const supervisor: AgentSpec = {
+    name: 'supervisor',
+    label: 'Supervisor',
+    description: 'Routes the user request to the appropriate specialist.',
+    instructions: ROUTER_INSTRUCTIONS,
+    tools: pickByIdSoft(byId, ['staffing_runNewTaskSkillTag']),
+    delegates: ['self', 'planner'],
+    defaultTier: 'fast',
+  };
+  return [self, planner, supervisor];
+}
+```
+
+| Boot-time validation | Effect |
+|---|---|
+| Every entry in `tools[]` resolves through `byId` | Pass or fail |
+| Every entry in `delegates[]` is the name of a specification in the returned list | Pass or fail |
+| Every tool RBAC slug is registered in a module's `rbac` declaration | Pass or fail |
+| Specification `name` fields are unique | Pass or fail |
+
+## 14. Web surface
+
+The chat panel is anchored to the right edge of the application shell. The Interactable approval card is rendered inline within the conversation, derived from the tool's input schema.
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ Copilot                                  [Planner ▾]  [×]  │
+├────────────────────────────────────────────────────────────┤
+│ User:    who can pick up TASK-101 - Stripe webhooks?       │
+│ Planner: candidates - Devon, Aki, Sam                      │
+│                                                            │
+│ ┌────────────────────────────────────────────────────────┐ │
+│ │ Approval required: planner_assignTask                  │ │
+│ │ taskId         TASK-101                                │ │
+│ │ assigneeUserId Devon                                   │ │
+│ │                       [ Reject ]   [ Approve  ⏎ ]      │ │
+│ └────────────────────────────────────────────────────────┘ │
+│                                                            │
+│ [ Compose message...                                   ↵ ] │
+└────────────────────────────────────────────────────────────┘
+```
+
+| UI element | Source library |
+|---|---|
+| Panel shell | `@assistant-ui/react` |
+| Message stream | `@ai-sdk/react` `useChat` with `@assistant-ui/react-ai-sdk` adapter |
+| Tool-call card | `@assistant-ui/react` `<ToolCallContentPart>` |
+| Approval card | assistant-ui Interactable, parameterised by the tool input schema |
+| Markdown rendering | `@assistant-ui/react-markdown` |
+| Specialist selector | Local component reading `userVisible` from the agent catalogue |
+
+The panel communicates with the backend through a single Hono route (`/api/copilot/chat`); the route uses `@mastra/ai-sdk` to bridge Mastra's stream protocol to AI SDK v6's stream protocol.
+
+## 15. End-to-end execution
+
+The full path from user approval to assignee notification:
 
 ```mermaid
 sequenceDiagram
-    autonumber
-    participant API as planner.createTask
-    participant Tx as transaction
-    participant Tbl as planner.tasks
-    participant Out as core.events<br/>(outbox)
-    participant W as embedding worker
-    participant Emb as task_embeddings
+    participant UI as assistant-ui
+    participant API as POST /api/copilot/chat
+    participant Sup as Supervisor
+    participant Pln as Planner specialist
+    participant Tool as planner_assignTask
+    participant Dom as planner.assignTask
+    participant DB as Postgres
+    participant Disp as Dispatcher
+    participant Sub as notifications subscriber
+    participant Devon as Assignee SSE
 
-    API->>Tx: open
-    Tx->>Tbl: INSERT
-    Tx->>Out: append task.created
-    Tx-->>API: commit
-    Out-->>W: notify (or 2s poll)
-    W->>W: skip if source_hash unchanged
-    W->>Emb: upsert vector + model_id + hash
+    UI->>API: POST chat with approval intent
+    API->>Sup: delegate message
+    Sup->>Pln: delegate message
+    Pln->>Tool: planner_assignTask taskId assigneeUserId
+    Note over Tool: approval card already accepted upstream
+    Tool->>Dom: assignTask with session
+    Dom->>DB: BEGIN UPDATE planner.tasks INSERT core.events COMMIT
+    DB-->>Disp: pg_notify events
+    Disp->>Sub: planner.task.assigned
+    Sub->>DB: INSERT notifications.notice
+    Sub->>Devon: SSE new notification
+    Dom-->>Tool: assignment result
+    Tool-->>Pln: stream tool result
+    Pln-->>UI: TASK-101 assigned to Devon
 ```
 
-| Property | How |
-|---|---|
-| **Idempotent** | Keyed on event id; safe to redeliver |
-| **Skip-when-unchanged** | `source_hash` comparison before re-embed |
-| **Model-upgrade safe** | `model_id` column → backfill filters on stale rows only |
-| **Delete safe** | Source delete → cascade to embedding row |
+The p95 latency budget for this flow is approximately 1.2 s from approval click to the confirmation message, with an additional ~150 ms for the SSE notification to reach the assignee.
 
 ---
 
-## Operational story
+# Part E — Production concerns
 
-### Observability — measured at every layer
+## 16. Failure modes
 
-```mermaid
-graph TB
-    Top[Top Supervisor]
-    Dom[Domain Supervisor]
-    Spec[Specialist]
-    WF[Workflow step]
-    Tool[Tool call]
-    DB[(Postgres / pgvector)]
-
-    Top --> Dom --> Spec
-    Spec --> Tool
-    Spec --> WF
-    WF --> Tool
-    Tool --> DB
-
-    Top -.metric.-> OTel[OpenTelemetry → Grafana]
-    Dom -.metric.-> OTel
-    Spec -.metric.-> OTel
-    WF -.metric.-> OTel
-    Tool -.metric.-> OTel
-
-    style OTel fill:#FFC107
-```
-
-Every box reports latency + token cost. When "the assistant feels slow", we can name the layer.
-
-### Audit — one chronological tape
-
-```mermaid
-timeline
-    title Audit tape — core.events
-    User asks find someone : chat.message.received
-    Workflow suspends with card : copilot.workflow.suspended
-    User picks Carol : copilot.approval.granted
-    Tool runs : planner.task.assigned
-    Subscriber re-embeds : planner.task.assigned consumed
-```
-
-| Concern | How we handle it |
-|---|---|
-| **Audit** | Every approval, tool call, and workflow run → `core.events`. Same outbox as domain events. |
-| **Resilience** | Conversation + suspended runs persist in Postgres. No in-memory state lost to restarts. |
-| **Safety rails** | Delegation depth cap (≤4 hops), loop detection, per-tenant step budget. Runaway → structured error, never wall-clock timeout. |
-| **Evaluation** | Three layers: tool integration tests · workflow golden-trace replays · agent routing + e2e evals. Merge-gating + nightly. |
-
-### Eval bar (merge-gating)
-
-```mermaid
-graph LR
-    T["<b>Tools</b><br/>integration tests<br/>real Postgres"]
-    W["<b>Workflows</b><br/>golden-trace replays<br/>dedup P≥0.90, R≥0.80"]
-    A["<b>Agents</b><br/>routing 50 prompts ≥95%<br/>e2e 20 flows ≥90%"]
-
-    T --> Merge[merge gate]
-    W --> Merge
-    A --> Merge
-
-    style Merge fill:#0047FF,color:#fff
-```
-
----
-
-## How this absorbs the next module
-
-```mermaid
-graph LR
-    M["new module<br/>(e.g. timesheet)"]
-    R["registry"]
-    S["supervisor tree"]
-
-    M -->|"<b>1.</b> register specialist"| R
-    M -->|"<b>2.</b> publish cross-module reads"| R
-    R -->|"<b>3.</b> rebuild on next boot"| S
-
-    style M fill:#0047FF,color:#fff
-    style R fill:#E6EEFF
-    style S fill:#FFC107
-```
-
-Three actions, none of them touch the copilot package. The new specialist appears under its domain on the next process restart; existing specialists immediately gain access to whatever reads the new module published. This is the property that lets the platform grow without a coordination tax on the copilot team.
-
----
-
-## What's deferred
-
-| Item | Why | Un-defer when |
+| Failure | Detection | Recovery |
 |---|---|---|
-| Dedup on **update** | Noisy signal — every keystroke would fire a card | Duplicate-create rate stays above zero after v1 |
-| **Knowledge domain** (RAG over docs / wiki) | Substantial separate slice (chunking, ingestion, graph-RAG) | Roadmap M3; will use Mastra's `MDocument` + `createGraphRAGTool` |
-| **Learning loop** (retune weights from accept/reject) | Needs LLM-as-judge eval infrastructure first | Eval infra lands in M3 |
-| **Slack / email approval surfaces** | In-app card pattern needs to bed in first | After v1 launches with steady usage |
-| **Auto-assignment** | Policy decision — agent suggests, user assigns | Never |
+| LLM provider unavailable | Provider error returned to the tool layer; AI SDK v6 retries on transient errors | Model registry fails over to the backup provider in the same tier |
+| Tool implementation raises an unexpected exception | Mastra captures the exception and streams a tool error to the agent | Agent receives the error in context and re-plans or surfaces it to the user |
+| User rejects approval | AI SDK v6 streams the rejection as a tool result | Agent receives the rejection and suggests alternatives |
+| Dispatcher lag increases | `/health/ready` reports backlog | Scale `apps/worker`; investigate slow subscribers |
+| Long-running tool blocks the specialist | Mastra timeout (default 60 s) | Tool returns timeout; agent re-plans |
+| Stale agent cache after an RBAC change | LRU keyed on role-set hash | Permission change invalidates the cache entry on the next request |
+| Mastra memory store unreachable at boot | Readiness probe red; boot fails | Cluster does not accept traffic — fail fast |
+| Embedding job backlog | `embed_<entity>` job count in observability | Scale workers; throttle source; defer backfill |
 
-Full deferred table: [`docs/superpowers/specs/2026-05-25-supervisor-refactor-umbrella-design.md`](superpowers/specs/2026-05-25-supervisor-refactor-umbrella-design.md) §12.
+## 17. Latency and cost budget
+
+Per-turn p95 budget for the planner specialist:
+
+| Stage | Latency | Token cost (smart tier) | Notes |
+|---|---|---|---|
+| Supervisor route | 150 ms | ~150 in, ~30 out | Fast tier model |
+| Specialist plan | 500 ms | ~800 in, ~200 out | Smart tier; tool schemas in prompt |
+| `search_tasks_semantic` | 250 ms | — | Stage 1 RRF + Stage 2 Cohere rerank |
+| `identity_searchUsersBySkills` | 80 ms | — | Indexed query |
+| `planner_assignTask` (post-approval) | 50 ms | — | Single transaction |
+| Summary stream back to UI | 200 ms | ~300 in, ~150 out | Smart tier |
+| **Total per turn** | **~1.2 s** | **~2 k tokens** | |
+
+| Cost lever | Effect |
+|---|---|
+| Drop specialist to `fast` tier | ~40 % cost reduction, ~30 % latency reduction, modest reduction in assignment reasoning quality |
+| Disable rerank (`stage2: 'none'`) | ~150 ms saved; recall@10 drops 8–12 % |
+| Cap thread context to last N messages | Linear reduction in token cost |
+| Provider prompt caching (AI SDK v6) | First turn unaffected; subsequent turns benefit from cache hits |
+
+## 18. Extension criteria — when to add a specialist
+
+```mermaid
+flowchart TD
+    A[New use case identified] --> B{Existing specialist covers it}
+    B -->|yes| C[Add the tool to that specialist]
+    B -->|no| D{Scoped to a single domain}
+    D -->|yes| E[New specialist in that domain]
+    D -->|no, multi-module| F[New orchestrator-tier agent in staffing]
+    C --> G{Specialist tool count above 15}
+    G -->|yes| H[Split into two specialists]
+    G -->|no| I[Complete]
+    E --> J[Add to supervisor delegates]
+    F --> J
+    H --> J
+```
+
+| Precondition before merging a new specialist |
+|---|
+| All capabilities have a public function in the owning module |
+| Each capability has a tool wrapper in that module's `agent-tools/` |
+| Write tools set `needsApproval: true` |
+| RBAC slugs are registered in `<module>/src/rbac.ts` |
+| Specialist `tools[]` contains no more than 15 entries |
+| Specialist `description` reads as a job title rather than a feature list |
+| Supervisor `delegates[]` includes the new specialist |
+| At least one integration test exercises the supervisor → specialist → tool → database path |
+| Latency and cost budget recorded in §17 |
+
+## 19. Code locations
+
+| Concept | File |
+|---|---|
+| Tool contract (no runtime dependency on `@mastra/*`) | `sdks/copilot/src/index.ts` |
+| `defineCopilotTool` definition | `sdks/copilot/src/index.ts` |
+| Agent specifications and catalogue assembly | `packages/copilot/src/backend/agents/catalog.ts` |
+| `AgentSpec` type | `packages/copilot/src/backend/agents/specs.ts` |
+| Supervisor and specialist system prompts | `packages/copilot/src/backend/instructions.ts` |
+| Mastra build, memory wiring, LRU cache | `packages/copilot/src/backend/runtime.ts`, `agent-factory.ts` |
+| Model tier registry | `packages/copilot/src/backend/model-registry.ts` |
+| RBAC tool filter | `packages/copilot/src/backend/rbac-filter.ts` |
+| Reference planner tools | `packages/planner/src/backend/agent-tools/` |
+| Chat HTTP route | `packages/copilot/src/backend/routes.ts` |
+| Mastra source (API reference) | `/Users/canh/Projects/Seta/mastra/` (sibling checkout) |
+| Mastra playground (UX reference for chat and uploads) | `/Users/canh/Projects/Seta/mastra/packages/playground-ui/` |
 
 ---
 
-## References
+## Related documents
 
-- **Spec**: [`docs/superpowers/specs/2026-05-25-supervisor-refactor-umbrella-design.md`](superpowers/specs/2026-05-25-supervisor-refactor-umbrella-design.md)
-- **Implementation plans**: `docs/superpowers/plans/2026-05-25-supervisor-refactor-pr{1,2,3}-*.md`
-- **Mastra**: [supervisor agents](https://mastra.ai/docs/agents/supervisor-agents) · [approval propagation](https://mastra.ai/docs/agents/agent-approval) · [vector query tool](https://mastra.ai/reference/tools/vector-query-tool)
-- **Repo-wide**: [`architecture.md`](architecture.md) · [`creating-modules.md`](creating-modules.md)
+- [`architecture.md`](./architecture.md) — surrounding platform shape.
+- [`tech-stack.md`](./tech-stack.md) — rationale for Mastra, AI SDK v6, assistant-ui.
+- [`creating-modules.md`](./creating-modules.md) — adding a module and its agent tools.
