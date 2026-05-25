@@ -267,3 +267,19 @@ export interface ChartData {
   byMember: Array<{ userId: string; displayName: string; count: number }>;
   burndown?: Array<{ date: string; remaining: number; ideal: number }>;
 }
+
+export interface CommentDto {
+  id: string;
+  task_id: string;
+  author_id: string;
+  author_display_name: string;
+  body: string;
+  created_at: string;
+  edited_at: string | null;
+}
+
+export interface CommentListResult {
+  comments: CommentDto[];
+  next_cursor?: string;
+  has_more: boolean;
+}

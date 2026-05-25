@@ -1,8 +1,8 @@
 import { DragDropContext, Draggable, Droppable, type DropResult } from '@hello-pangea/dnd';
-import type { TaskDetailRow } from '@seta/planner';
+import type { ChecklistItemRow, TaskDetailRow } from '@seta/planner';
 import { Checkbox } from '@seta/shared-ui';
 import { GripVertical, Plus } from 'lucide-react';
-import { type KeyboardEvent, useRef, useState } from 'react';
+import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { useAddChecklistItem } from '../hooks/mutations/add-checklist-item';
 import { useRemoveChecklistItem } from '../hooks/mutations/remove-checklist-item';
 import { useUpdateChecklistItem } from '../hooks/mutations/update-checklist-item';
@@ -20,6 +20,44 @@ export function TaskDetailChecklistCard({ task, planId }: Props) {
 
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingId) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }
+  }, [editingId]);
+
+  const beginEdit = (it: ChecklistItemRow) => {
+    setEditingId(it.id);
+    setEditDraft(it.label);
+  };
+
+  const commitEdit = (it: ChecklistItemRow) => {
+    const next = editDraft.trim();
+    if (next && next !== it.label) {
+      update.mutate({ item_id: it.id, patch: { label: next } });
+    }
+    setEditingId(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const onEditKeyDown = (e: KeyboardEvent<HTMLInputElement>, it: ChecklistItemRow) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitEdit(it);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEdit();
+    }
+  };
 
   const onSubmitDraft = () => {
     const label = draft.trim();
@@ -100,12 +138,25 @@ export function TaskDetailChecklistCard({ task, planId }: Props) {
                           })
                         }
                       />
-                      <label
-                        htmlFor={`chk-${it.id}`}
-                        className={`t-sm flex-1 cursor-pointer ${it.checked ? 'text-ink-subtle line-through' : 'text-ink'}`}
-                      >
-                        {it.label}
-                      </label>
+                      {editingId === it.id ? (
+                        <input
+                          ref={editInputRef}
+                          aria-label="Edit checklist item"
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.currentTarget.value)}
+                          onKeyDown={(e) => onEditKeyDown(e, it)}
+                          onBlur={() => commitEdit(it)}
+                          className="t-sm flex-1 rounded-sm border border-primary bg-surface-1 px-1 py-0.5 text-ink outline-none"
+                        />
+                      ) : (
+                        <span
+                          onDoubleClick={() => beginEdit(it)}
+                          title="Double-click to edit"
+                          className={`t-sm flex-1 cursor-text select-none ${it.checked ? 'text-ink-subtle line-through' : 'text-ink'}`}
+                        >
+                          {it.label}
+                        </span>
+                      )}
                       <button
                         type="button"
                         aria-label="Remove"

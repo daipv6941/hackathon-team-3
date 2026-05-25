@@ -1,6 +1,8 @@
 import type {
   BucketRow,
   ChecklistItemRow,
+  CommentDto,
+  CommentListResult,
   GroupActivityResult,
   GroupMemberRow,
   GroupRow,
@@ -720,6 +722,36 @@ async function getGroupSyncStatus(input: { groupId: string }): Promise<GroupSync
   )) as GroupSyncStatusResponse;
 }
 
+async function listComments(
+  task_id: string,
+  opts: { cursor?: string; limit?: number } = {},
+): Promise<CommentListResult> {
+  const q = new URLSearchParams();
+  if (opts.cursor) q.set('cursor', opts.cursor);
+  if (opts.limit !== undefined) q.set('limit', String(opts.limit));
+  return (await request<CommentListResult>(
+    `/api/planner/v1/tasks/${task_id}/comments${q.toString() ? `?${q}` : ''}`,
+  )) as CommentListResult;
+}
+
+async function postComment(input: { task_id: string; body: string }): Promise<CommentDto> {
+  return (await request<CommentDto>(`/api/planner/v1/tasks/${input.task_id}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({ body: input.body }),
+  })) as CommentDto;
+}
+
+async function updateComment(input: { comment_id: string; body: string }): Promise<CommentDto> {
+  return (await request<CommentDto>(`/api/planner/v1/comments/${input.comment_id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ body: input.body }),
+  })) as CommentDto;
+}
+
+async function deleteComment(input: { comment_id: string }): Promise<void> {
+  await request<void>(`/api/planner/v1/comments/${input.comment_id}`, { method: 'DELETE' });
+}
+
 async function listTaskEvents(input: {
   task_id: string;
   limit?: number;
@@ -792,6 +824,10 @@ export const plannerClient = {
   updateChecklistItem,
   removeChecklistItem,
   listTaskEvents,
+  listComments,
+  postComment,
+  updateComment,
+  deleteComment,
   searchM365Groups,
   linkGroupToM365,
   unlinkGroupFromM365,

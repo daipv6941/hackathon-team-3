@@ -2,6 +2,7 @@ import { resetCoreDb } from '@seta/core/testing';
 import { closePools, initPools } from '@seta/shared-db';
 import { withTestDb } from '@seta/shared-testing';
 import { describe, expect, it } from 'vitest';
+import { createComment } from '../../src/backend/domain/create-comment.ts';
 import { listTaskEvents } from '../../src/backend/domain/list-task-events.ts';
 import {
   addChecklistItem,
@@ -150,6 +151,39 @@ describe('listTaskEvents', () => {
               session: otherTenant.adminSession,
             }),
           ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+        } finally {
+          resetCoreDb();
+          await closePools();
+        }
+      },
+    );
+  });
+
+  it('includes planner.comment.* events in the task activity feed', async () => {
+    await withTestDb(
+      {
+        templateDbName: process.env.SETA_TEST_PG_TEMPLATE as string,
+        baseUrl: process.env.SETA_TEST_PG_BASE as string,
+      },
+      async ({ pool, databaseUrl }) => {
+        resetCoreDb();
+        initPools({ databaseUrl });
+        try {
+          const seeded = await seedTenant(pool);
+          const session = seeded.adminSession;
+
+          const group = await createGroup({
+            tenant_id: seeded.tenant_id,
+            name: 'G',
+            session,
+          });
+          const plan = await createPlan({ group_id: group.id, name: 'P', session });
+          const task = await createTask({ plan_id: plan.id, title: 't', session });
+
+          await createComment({ task_id: task.id, body: 'feed me', session });
+
+          const r = await listTaskEvents({ task_id: task.id, session });
+          expect(r.events.some((e) => e.event_type === 'planner.comment.created')).toBe(true);
         } finally {
           resetCoreDb();
           await closePools();

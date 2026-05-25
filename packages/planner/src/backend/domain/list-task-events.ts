@@ -81,7 +81,7 @@ export async function listTaskEvents(opts: ListTaskEventsOpts): Promise<ListTask
     WHERE tenant_id = ${opts.session.tenant_id}::uuid
       AND (
         (aggregate_type = 'planner.task' AND aggregate_id = ${opts.task_id})
-        OR (aggregate_type IN ('planner.checklist_item', 'planner.label')
+        OR (aggregate_type IN ('planner.checklist_item', 'planner.label', 'planner.comment')
             AND payload->>'task_id' = ${opts.task_id})
       )
       ${cursorClause}

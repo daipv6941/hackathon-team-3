@@ -11,6 +11,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { ArrowRightLeft, ChevronRight, Copy, MoreHorizontal } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useCopilotContext } from '@/modules/copilot';
+import { useSession } from '@/modules/identity/components/SessionProvider';
 import { PlannerClientError } from '../api/planner-client';
 import { ConfirmDeleteTaskDialog } from '../components/ConfirmDeleteTaskDialog';
 import { DuplicateTaskDialog } from '../components/DuplicateTaskDialog';
@@ -18,6 +19,7 @@ import { MoveTaskDialog } from '../components/MoveTaskDialog';
 import { PlanError } from '../components/plan-error';
 import { TaskDetailAssigneesCard } from '../components/TaskDetailAssigneesCard';
 import { TaskDetailChecklistCard } from '../components/TaskDetailChecklistCard';
+import { TaskDetailCommentsCard } from '../components/TaskDetailCommentsCard';
 import { TaskDetailDescriptionCard } from '../components/TaskDetailDescriptionCard';
 import { TaskDetailExternalCard } from '../components/TaskDetailExternalCard';
 import { TaskDetailHeader } from '../components/TaskDetailHeader';
@@ -83,6 +85,8 @@ export function TaskDetailPage({
   onDeleted,
 }: Props) {
   const navigate = useNavigate();
+  const session = useSession();
+  const currentUserId = session.user_id;
   const taskQ = useTaskDetail(taskId);
   const boardQ = usePlanBoard(planId);
   const deleteTask = useDeleteTask(planId);
@@ -147,6 +151,8 @@ export function TaskDetailPage({
   const bucketName = boardQ.data?.buckets.find((b) => b.id === task.bucket_id)?.name ?? null;
   const creatorName =
     membersQ.data?.members.find((m) => m.user_id === task.created_by)?.display_name ?? 'Unknown';
+  const isGroupOwner =
+    membersQ.data?.members.some((m) => m.user_id === currentUserId && m.role === 'owner') ?? false;
 
   const goToTask = (id: string) =>
     void navigate({
@@ -334,6 +340,11 @@ export function TaskDetailPage({
             <TaskDetailDescriptionCard task={task} planId={planId} />
             <TaskDetailReferencesCard task={task} planId={planId} />
             <TaskDetailChecklistCard task={task} planId={planId} />
+            <TaskDetailCommentsCard
+              taskId={task.id}
+              currentUserId={currentUserId}
+              isGroupOwner={isGroupOwner}
+            />
           </main>
           <aside className="flex flex-col gap-3.5 self-start pr-1" aria-label="Task properties">
             <TaskDetailProgressCard task={task} planId={planId} />

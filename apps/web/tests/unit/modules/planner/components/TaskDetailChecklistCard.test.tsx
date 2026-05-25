@@ -83,6 +83,83 @@ describe('TaskDetailChecklistCard', () => {
     expect(captured.mock.calls[0]?.[0]).toEqual({ patch: { checked: true } });
   });
 
+  it('renames an item via double-click + Enter', async () => {
+    const { userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const captured = vi.fn<(body: Record<string, unknown>) => void>();
+    server.use(
+      http.patch('/api/planner/v1/checklist-items/c1', async ({ request }) => {
+        captured((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json(item({ id: 'c1', label: 'renamed' }));
+      }),
+    );
+
+    renderWithClient(
+      <TaskDetailChecklistCard
+        task={makeDetail([item({ id: 'c1', label: 'old' })])}
+        planId="p1"
+      />,
+    );
+
+    await user.dblClick(screen.getByText('old'));
+    const editInput = screen.getByRole('textbox', { name: /Edit checklist item/i });
+    await user.clear(editInput);
+    await user.type(editInput, 'renamed{Enter}');
+    expect(captured.mock.calls[0]?.[0]).toEqual({ patch: { label: 'renamed' } });
+  });
+
+  it('cancels rename on Escape without calling the API', async () => {
+    const { userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const captured = vi.fn();
+    server.use(
+      http.patch('/api/planner/v1/checklist-items/c1', () => {
+        captured();
+        return HttpResponse.json(item({ id: 'c1' }));
+      }),
+    );
+
+    renderWithClient(
+      <TaskDetailChecklistCard
+        task={makeDetail([item({ id: 'c1', label: 'old' })])}
+        planId="p1"
+      />,
+    );
+
+    await user.dblClick(screen.getByText('old'));
+    const editInput = screen.getByRole('textbox', { name: /Edit checklist item/i });
+    await user.clear(editInput);
+    await user.type(editInput, 'discarded{Escape}');
+    expect(captured).not.toHaveBeenCalled();
+    expect(screen.getByText('old')).toBeInTheDocument();
+  });
+
+  it('ignores empty rename and reverts on Enter', async () => {
+    const { userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const captured = vi.fn();
+    server.use(
+      http.patch('/api/planner/v1/checklist-items/c1', () => {
+        captured();
+        return HttpResponse.json(item({ id: 'c1' }));
+      }),
+    );
+
+    renderWithClient(
+      <TaskDetailChecklistCard
+        task={makeDetail([item({ id: 'c1', label: 'old' })])}
+        planId="p1"
+      />,
+    );
+
+    await user.dblClick(screen.getByText('old'));
+    const editInput = screen.getByRole('textbox', { name: /Edit checklist item/i });
+    await user.clear(editInput);
+    await user.type(editInput, '   {Enter}');
+    expect(captured).not.toHaveBeenCalled();
+    expect(screen.getByText('old')).toBeInTheDocument();
+  });
+
   it('adds an item via the inline input on Enter', async () => {
     const { userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();

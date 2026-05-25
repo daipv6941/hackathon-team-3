@@ -10,11 +10,13 @@ export { attachLabelToCategorySlot } from './backend/domain/attach-label-to-cate
 export { completeTask } from './backend/domain/complete-task.ts';
 export { countTasksByCategorySlot } from './backend/domain/count-tasks-by-category-slot.ts';
 export { createBucket } from './backend/domain/create-bucket.ts';
+export { createComment } from './backend/domain/create-comment.ts';
 export { createGroup } from './backend/domain/create-group.ts';
 export { createLabel } from './backend/domain/create-label.ts';
 export { createPlan } from './backend/domain/create-plan.ts';
 export { createTask } from './backend/domain/create-task.ts';
 export { deleteBucket } from './backend/domain/delete-bucket.ts';
+export { deleteComment } from './backend/domain/delete-comment.ts';
 export { deleteGroup } from './backend/domain/delete-group.ts';
 export { deleteLabel } from './backend/domain/delete-label.ts';
 export { deletePlan } from './backend/domain/delete-plan.ts';
@@ -34,6 +36,7 @@ export { linkGroupToM365 } from './backend/domain/link-group-to-m365.ts';
 export { linkPlanToM365 } from './backend/domain/link-plan-to-m365.ts';
 export { listBuckets } from './backend/domain/list-buckets.ts';
 export { listChecklistItems } from './backend/domain/list-checklist-items.ts';
+export { listComments } from './backend/domain/list-comments.ts';
 export type { GroupMemberCandidate } from './backend/domain/list-group-member-candidates.ts';
 export { listGroupMemberCandidates } from './backend/domain/list-group-member-candidates.ts';
 export type { GroupMembersPage } from './backend/domain/list-group-members.ts';
@@ -90,6 +93,7 @@ export { unlinkGroupFromM365 } from './backend/domain/unlink-group-from-m365.ts'
 export { unlinkPlanFromM365 } from './backend/domain/unlink-plan-from-m365.ts';
 export { updateBucket } from './backend/domain/update-bucket.ts';
 export { updateChecklistItem } from './backend/domain/update-checklist-item.ts';
+export { updateComment } from './backend/domain/update-comment.ts';
 export { updateGroup } from './backend/domain/update-group.ts';
 export { updateLabel } from './backend/domain/update-label.ts';
 export { updatePlan } from './backend/domain/update-plan.ts';
@@ -99,6 +103,8 @@ export type {
   BucketRow,
   ChartData,
   ChecklistItemRow,
+  CommentDto,
+  CommentListResult,
   GroupActivityItem,
   GroupActivityResult,
   GroupMemberRow,
@@ -144,13 +150,16 @@ export type {
   AddTaskReferenceInput,
   AttachLabelToCategorySlotInput,
   CreateBucketInput,
+  CreateCommentInput,
   CreateGroupInput,
   CreateLabelInput,
   CreatePlanInput,
   CreateTaskInput,
+  DeleteCommentInput,
   DuplicateTaskInput,
   DuplicateTaskOptions,
   GetPlanChartDataInput,
+  ListCommentsInput,
   ListMyTasksInput,
   ListPlanTasksByDateRangeInput,
   MoveBucketInput,
@@ -162,6 +171,7 @@ export type {
   SetTaskAssigneesInput,
   UpdateBucketPatch,
   UpdateChecklistItemPatch,
+  UpdateCommentInput,
   UpdateGroupPatch,
   UpdateLabelPatch,
   UpdatePlanPatch,

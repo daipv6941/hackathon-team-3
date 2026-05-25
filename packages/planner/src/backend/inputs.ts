@@ -287,3 +287,23 @@ export interface GetPlanChartDataInput {
   plan_id: string;
   range?: { from?: string; to?: string };
 }
+
+export interface CreateCommentInput {
+  task_id: string;
+  body: string;
+}
+
+export interface UpdateCommentInput {
+  comment_id: string;
+  body: string;
+}
+
+export interface DeleteCommentInput {
+  comment_id: string;
+}
+
+export interface ListCommentsInput {
+  task_id: string;
+  limit?: number;
+  cursor?: string;
+}
