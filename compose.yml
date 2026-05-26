@@ -194,3 +194,25 @@ services:
     tmpfs:
       - /tmp
 
+  seeder:
+    image: ${PLATFORM_IMAGE_SERVER:-${ECR_REGISTRY}/${ECR_REPOSITORY}:server-${PLATFORM_VERSION:-latest}}
+    command: ["seed"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PLATFORM_MODULES: ${PLATFORM_MODULES:-*}
+      CRYPTO_KEY_PROVIDER: ${CRYPTO_KEY_PROVIDER:-env}
+      CRYPTO_KMS_KEY_ARN: ${CRYPTO_KMS_KEY_ARN:-}
+      CRYPTO_LOCAL_MASTER_KEY: ${CRYPTO_LOCAL_MASTER_KEY:-}
+      CRYPTO_LOCAL_KEYS: ${CRYPTO_LOCAL_KEYS:-}
+      CRYPTO_LOCAL_PRIMARY_KID: ${CRYPTO_LOCAL_PRIMARY_KID:-}
+      AWS_REGION: ${AWS_REGION:-}
+    networks:
+      - seta-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp
+
