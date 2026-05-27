@@ -4,6 +4,7 @@ import { plannerGetTaskTool } from './get-task.ts';
 import { plannerListCommentsTool } from './list-comments.ts';
 import { plannerPostCommentTool } from './post-comment.ts';
 import { identitySearchUsersBySkillsTool } from './search-users-by-skills.ts';
+import { plannerSetAssigneesTool } from './set-assignees.ts';
 
 export { plannerAssignTaskTool } from './assign-task.ts';
 export {
@@ -15,6 +16,7 @@ export { plannerGetTaskTool } from './get-task.ts';
 export { plannerListCommentsTool } from './list-comments.ts';
 export { plannerPostCommentTool } from './post-comment.ts';
 export { identitySearchUsersBySkillsTool } from './search-users-by-skills.ts';
+export { plannerSetAssigneesTool } from './set-assignees.ts';
 
 /**
  * Tools contributed to the agent registry at module-registration time.
@@ -25,6 +27,7 @@ export { identitySearchUsersBySkillsTool } from './search-users-by-skills.ts';
  */
 export const plannerAgentTools: AgentTool[] = [
   plannerAssignTaskTool,
+  plannerSetAssigneesTool,
   plannerGetTaskTool,
   plannerListCommentsTool,
   plannerPostCommentTool,

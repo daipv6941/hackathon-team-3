@@ -6,7 +6,10 @@ import { assignTask } from '../domain/assign-task.ts';
 export const plannerAssignTaskTool = defineAgentTool({
   id: 'planner_assignTask',
   name: 'Assign Task',
-  description: 'Assign a user to a task.',
+  description:
+    'Add one user as an additional assignee without affecting existing assignees. ' +
+    'Use only when the user explicitly wants to ADD a collaborator alongside current owners. ' +
+    'When the user says "assign to X" or "reassign to X", use planner_setAssignees instead.',
   input: z.object({
     taskId: z.string().uuid().describe('The task ID'),
     assigneeUserId: z.string().uuid().describe('The user ID to assign to the task'),

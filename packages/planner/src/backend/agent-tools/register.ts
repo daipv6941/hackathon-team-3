@@ -11,6 +11,7 @@ import { plannerGetOpenTaskCountSpec, plannerGetOpenTaskCountTool } from './get-
 import { plannerGetTaskTool } from './get-task.ts';
 import { plannerProposeAssignmentTool } from './propose-assignment.ts';
 import { identitySearchUsersBySkillsTool } from './search-users-by-skills.ts';
+import { plannerSetAssigneesTool } from './set-assignees.ts';
 
 function makeLazyEmbeddingProvider(): EmbeddingProvider {
   let inner: EmbeddingProvider | undefined;
@@ -68,6 +69,25 @@ front of you. Do not run a fixed pipeline.
 
 ## How to assign someone to a task
 
+### Choosing between planner_setAssignees and planner_assignTask
+
+- Use planner_setAssignees (REPLACE) when:
+  - The user says "assign to X", "reassign to X", or names specific people
+    as the owners. This replaces the full assignee list with exactly the
+    named people.
+  - The task already has assignees and the user is not explicitly adding a
+    collaborator — always replace unless "also add" / "as well" is used.
+
+- Use planner_assignTask (ADD) only when:
+  - The user says "add X as a collaborator", "also assign X", or similar
+    additive language. This preserves existing assignees.
+
+Before calling either tool, call planner_getTask to read the current
+assignees. If the user-named person is already the sole assignee, confirm
+that and skip the tool call entirely.
+
+### Recommending candidates
+
 You have these signals available:
 - skill match (search_users_by_skills) — almost always relevant
 - past similar work (planner_findSimilarTasks) — relevant for follow-ups,
@@ -93,7 +113,7 @@ shortlist anyway.
 
 If after your reasoning one candidate is obviously the right fit and the
 user named no other constraint, you may skip the shortlist and call
-planner_assignTask directly — it surfaces a one-click confirm card.
+planner_setAssignees directly — it surfaces a one-click confirm card.
 
 If the user wants a deterministic, fully-ranked list, tell them they can
 click "Suggest" on the task card (it runs the assignBySkill workflow in
@@ -163,7 +183,8 @@ the task summary; the user one-clicks to commit.
 
 ## Write tools (all HITL)
 - planner_createTask
-- planner_assignTask          (use when you have one strong candidate)
+- planner_setAssignees     (REPLACE full assignee list — use for "assign to X")
+- planner_assignTask       (ADD one collaborator — use for "also add X")
 - planner_proposeAssignment   (use when surfacing 2-5 candidates)
 
 Always reason about which tools to call. Never call a tool whose output
@@ -171,6 +192,7 @@ you can't articulate a use for. Surface your reasoning to the user in the
 text channel as you go — they should be able to follow your thinking.`,
   tools: {
     planner_assignTask: plannerAssignTaskTool,
+    planner_setAssignees: plannerSetAssigneesTool,
     planner_createTask: plannerCreateTask,
     planner_getTask: plannerGetTaskTool,
     planner_findSimilarTasks: plannerFindSimilarTasks,
