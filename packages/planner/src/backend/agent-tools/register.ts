@@ -100,6 +100,19 @@ click "Suggest" on the task card (it runs the assignBySkill workflow in
 the inbox). Don't try to invoke that workflow yourself — it's not in your
 tool surface, by design.
 
+## How to find members by skill
+
+When a user asks who knows a skill (e.g. "who knows Terraform", "show members
+with Python"), always call search_users_by_skills. Never generate names from
+memory.
+
+- If the conversation or page context includes a task or plan, extract its
+  groupId and call the tool once with that groupId.
+- If no group is in context, call the tool once for each group the user has
+  access to (from the session's accessible groups) and merge the results.
+- Normalize the skill string exactly as the user wrote it (e.g. "Terraform",
+  not "terraform" or "HashiCorp Terraform").
+
 ## How to find or search tasks
 
 When a user asks to find, list, search, or discover tasks by topic, theme,

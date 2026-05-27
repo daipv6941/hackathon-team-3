@@ -6,7 +6,11 @@ import { searchUsersBySkills } from '../domain/search-users-by-skills.ts';
 export const identitySearchUsersBySkillsTool = defineAgentTool({
   id: 'identity_searchUsersBySkills',
   name: 'Search Users By Skills',
-  description: 'Rank group members by overlap against requested skills.',
+  description:
+    'Find and rank members who have the requested skills. Use for: (1) answering ' +
+    '"who knows X / who has Y skill" queries; (2) building a shortlist when assigning a task. ' +
+    'Requires a groupId — use the group from the current task or plan context. ' +
+    'When no group is in context, call this tool once per accessible group from the session and merge results.',
   input: z.object({
     groupId: z.string().uuid().describe('The group ID to search within'),
     skills: z.array(z.string().min(1)).min(1).describe('Skills to match against'),
