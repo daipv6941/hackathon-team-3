@@ -61,7 +61,7 @@ export const identitySearchUsersBySkillsTool = defineAgentTool({
       try {
         const task = await getTask({ task_id: input.taskId, session });
         for (const assignee of task.assignees) excludeUserIds.add(assignee.user_id);
-      } catch (err) {
+      } catch (_err) {
         // Task may have been deleted or belong to a different context; skip assignee exclusion.
       }
     }

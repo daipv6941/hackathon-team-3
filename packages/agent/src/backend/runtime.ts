@@ -92,7 +92,7 @@ function wireLifecycleHook(mastra: Mastra, pool: Pool, log?: Logger): LifecycleD
                   return undefined;
                 }
               })()
-            : (rc as Record<string, unknown>)['thread_id']
+            : (rc as Record<string, unknown>).thread_id
           : undefined;
       if (log) {
         log.warn(

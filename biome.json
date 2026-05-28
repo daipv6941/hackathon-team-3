@@ -9,6 +9,7 @@
   "files": {
     "includes": [
       "**",
+      "!hackathon",
       "!**/dist",
       "!**/build",
       "!**/.turbo",
