@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { recordEntityExposure } from '../../src/backend/entity-recorder.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { __resetMutexesForTests, recordEntityExposure } from '../../src/backend/entity-recorder.ts';
 import {
   EMPTY_WORKING_MEMORY,
   serializeWorkingMemory,
@@ -9,8 +9,12 @@ import {
 function buildCtx(initial: WorkingMemory | null) {
   let stored: string | null = initial ? serializeWorkingMemory(initial) : null;
   const memory = {
-    getWorkingMemory: vi.fn(async () => stored),
+    getWorkingMemory: vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 0)); // force task-queue yield → interleaves callers
+      return stored;
+    }),
     updateWorkingMemory: vi.fn(async ({ workingMemory }: { workingMemory: string }) => {
+      await new Promise((r) => setTimeout(r, 0)); // yield so both reads land before either write
       stored = workingMemory;
     }),
   };
@@ -31,6 +35,10 @@ const T1 = { taskId: '00000000-0000-4000-8000-000000000001', title: 'A' };
 const T2 = { taskId: '00000000-0000-4000-8000-000000000002', title: 'B' };
 
 describe('recordEntityExposure', () => {
+  beforeEach(() => {
+    __resetMutexesForTests();
+  });
+
   it('seeds recentTasks on empty memory', async () => {
     const { ctx, read } = buildCtx(null);
     await recordEntityExposure(ctx, { recentTasks: [T1] });
