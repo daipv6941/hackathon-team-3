@@ -107,7 +107,7 @@ The generator asks three questions:
 
 ### What the generator produces
 
-The generator creates `packages/timesheet/` populated with the canonical module shape: public surface stubs (`index.ts`, `events.ts`, `rbac.ts`, `contracts.ts`, `register.ts`), backend layout (`db/`, `domain/`, `subscribers/`, `jobs/`, `http/`, `agent-tools.ts`), an initial Drizzle migration that creates the `timesheet` schema, and a `tests/public/loads.test.ts` smoke test.
+The generator creates `packages/timesheet/` populated with the canonical module shape: public surface stubs (`index.ts`, `events.ts`, `rbac.ts`, `contracts.ts`, `register.ts`), backend layout (`db/`, `domain/`, `subscribers/`, `jobs/`, `http/`, `agent-tools.ts`), an initial Drizzle migration that creates the `timesheet` schema, and a `tests/contract/loads.test.ts` smoke test.
 
 ### Side effects of generation
 
@@ -608,7 +608,7 @@ Test layers, by directory:
 |---|---|---|
 | `tests/unit/` | Pure functions, no DB | Domain logic without infrastructure |
 | `tests/integration/` | Real Postgres via `testcontainers` | Domain function end-to-end through the schema |
-| `tests/public/` | Only `@seta/<module>` imports allowed | Asserts the public surface is sufficient |
+| `tests/contract/` | Only `@seta/<module>` imports allowed | Asserts the public surface is sufficient |
 | `tests/web/` (in `apps/web`) | Vitest + Testing Library | Component behaviour |
 | Playwright in `tests/e2e/` (root) | Real browser | User-visible flows |
 

@@ -8,6 +8,7 @@ import { registerNotificationsContributions } from '@seta/notifications/register
 import { registerPlannerContributions } from '@seta/planner/register';
 import { getPool } from '@seta/shared-db';
 import { registerStaffingContributions } from '@seta/staffing/register';
+// MODULE_IMPORTS_END — generator inserts new register*Contributions imports above this comment.
 import pino from 'pino';
 
 const log = pino({ name: 'cli/migrate' });
@@ -22,6 +23,7 @@ export async function migrateCommand(): Promise<void> {
   registerPlannerContributions(reg);
   registerStaffingContributions(reg);
   registerAgentContributions(reg);
+  // MODULE_REGISTRATIONS_END — generator inserts new register*Contributions(reg) calls above this comment.
   await runMigrations(reg, { pool: getPool('worker') });
   log.info('migrations applied');
 }
