@@ -1,6 +1,7 @@
 import type { SessionScope } from '@seta/core';
 import { withEmit } from '@seta/core/events';
 import { and, eq, isNull } from 'drizzle-orm';
+import sanitizeHtml from 'sanitize-html';
 import { emitPlannerTaskUpdated } from '../../events/emit-helpers.ts';
 import type { TaskChangedField, TaskMutableFields } from '../../events/types.ts';
 import { plans, tasks } from '../db/schema.ts';
@@ -12,6 +13,44 @@ import { isM365SystemActor } from './_actor.ts';
 import { taskRowToDto } from './_task-dto.ts';
 
 type TaskDbRow = typeof tasks.$inferSelect;
+
+const DESCRIPTION_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    'p',
+    'br',
+    'strong',
+    'em',
+    'u',
+    'del',
+    'h1',
+    'h2',
+    'h3',
+    'ul',
+    'ol',
+    'li',
+    'a',
+    'code',
+    'pre',
+  ],
+  allowedAttributes: { a: ['href', 'rel'] },
+  transformTags: {
+    a: (_tagName, attribs) => ({
+      tagName: 'a',
+      attribs: { href: attribs.href ?? '#', rel: 'noopener noreferrer' },
+    }),
+  },
+};
+
+function sanitizeDescription(raw: string | null): {
+  description: string | null;
+  description_text: string | null;
+} {
+  if (raw === null) return { description: null, description_text: null };
+  const description = sanitizeHtml(raw, DESCRIPTION_SANITIZE_OPTIONS);
+  const description_text =
+    sanitizeHtml(description, { allowedTags: [], allowedAttributes: {} }).trim() || null;
+  return { description, description_text };
+}
 
 const SIMPLE_FIELDS = [
   'title',
@@ -131,6 +170,17 @@ async function updateTaskImpl(input: {
         version: existing.version + 1,
       };
 
+      // Sanitize description and derive description_text as a coupled pair.
+      // description_text is NOT in SIMPLE_FIELDS — it is only ever written here.
+      let sanitizedDescriptionText: string | null | undefined;
+      if ((patch as Record<string, unknown>).description !== undefined) {
+        const { description, description_text } = sanitizeDescription(
+          (patch as Record<string, unknown>).description as string | null,
+        );
+        (patch as Record<string, unknown>).description = description;
+        sanitizedDescriptionText = description_text;
+      }
+
       for (const f of SIMPLE_FIELDS) {
         const v = (patch as Record<string, unknown>)[f];
         if (v === undefined) continue;
@@ -141,6 +191,18 @@ async function updateTaskImpl(input: {
         setFields[f] = v;
         changed.push(f);
         recordTaskFieldUpdated(f);
+      }
+
+      // Explicitly write description_text when description was sanitized.
+      if (sanitizedDescriptionText !== undefined) {
+        const exVal = existing.description_text;
+        if (JSON.stringify(exVal) !== JSON.stringify(sanitizedDescriptionText)) {
+          (before as Record<string, unknown>).description_text = exVal;
+          (after as Record<string, unknown>).description_text = sanitizedDescriptionText;
+          setFields.description_text = sanitizedDescriptionText;
+          changed.push('description_text');
+          recordTaskFieldUpdated('description_text');
+        }
       }
 
       for (const f of DATE_FIELDS) {
