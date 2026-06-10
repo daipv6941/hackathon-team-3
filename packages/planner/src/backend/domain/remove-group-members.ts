@@ -1,3 +1,4 @@
+// rbac: delegates — forwards to removeGroupMember, which enforces the planner.group.member.write permission per user.
 import type { PlannerSessionScope } from './_actor.ts';
 import { removeGroupMember } from './remove-group-member.ts';
 

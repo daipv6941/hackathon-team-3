@@ -1,3 +1,4 @@
+// rbac: user-self-scoped — user-facing mutations gate on uploaded_by ownership enforced in every WHERE clause; markAttachmentsConsumed, markAttachmentsFailed, and threadPendingBytes are agent-engine callbacks with no user session.
 import { buildTenantKey, presignedUploadUrl } from '@seta/shared-storage';
 import { and, eq, inArray } from 'drizzle-orm';
 import { knowledgeDb } from '../db/client.ts';
