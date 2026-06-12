@@ -9,6 +9,7 @@ import {
   registerPendingAssignReader,
   setBreakerConfig,
   setBreakerEventEmitter,
+  setConversationMemory,
   setExecutionPolicy,
 } from '@seta/agent-sdk';
 import type { AgentSpec, ContributionRegistry } from '@seta/core';
@@ -154,6 +155,10 @@ export function registerAgent(deps: {
   // entities. The chat route hands both to the orchestration run ctx.
   const userMem = buildMemory({ mastra, databaseUrl: deps.databaseUrl });
   const entitiesMem = buildEntitiesMemory({ mastra });
+  // The entities memory is a process singleton handed to the SDK recorder/
+  // resolver through a module-local holder — NOT via RequestContext, which
+  // Mastra serializes around tool execution (stripping a live Memory's methods).
+  setConversationMemory(entitiesMem);
 
   return {
     attach(app) {
@@ -167,8 +172,6 @@ export function registerAgent(deps: {
         consumeThreadAttachments: deps.consumeThreadAttachments,
         markAttachmentsConsumed: deps.markAttachmentsConsumed,
         markAttachmentsFailed: deps.markAttachmentsFailed,
-        entitiesMemory: entitiesMem?.memory,
-        entitiesMemoryConfig: entitiesMem?.memoryConfig,
         userMemory: userMem?.memory,
         userMemoryConfig: userMem?.memoryConfig,
       });

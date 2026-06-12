@@ -304,10 +304,6 @@ export function mountChatRoute(app: Hono<AgentRouteEnv>, deps: AgentRouteDeps): 
             actorUserId: session.user_id,
             effectivePermissions: session.effective_permissions,
             threadId: orchThreadId,
-            entitiesMemory:
-              deps.entitiesMemory && deps.entitiesMemoryConfig
-                ? { memory: deps.entitiesMemory, memoryConfig: deps.entitiesMemoryConfig }
-                : undefined,
             userMemory:
               deps.userMemory && deps.userMemoryConfig
                 ? { memory: deps.userMemory, memoryConfig: deps.userMemoryConfig }

@@ -367,7 +367,7 @@ describe('POST /api/agent/v1/chat (orchestration runtime persistence)', () => {
     });
   });
 
-  it('passes threadId + memory handles in the orchestration ctx', async () => {
+  it('passes threadId + userMemory handle in the orchestration ctx', async () => {
     await withAgentTestDb(async ({ pool, databaseUrl }) => {
       const { admin_user_id, tenant_id } = await createTestTenantWithAdmin({ pool });
       const { buildMastra } = await import('../../src/backend/runtime.ts');
@@ -384,9 +384,7 @@ describe('POST /api/agent/v1/chat (orchestration runtime persistence)', () => {
       };
 
       // Identity-checkable stand-ins: the route must wrap THESE instances in
-      // { memory, memoryConfig } handles — it never calls into them here.
-      const fakeEntitiesMemory = { tag: 'entities' };
-      const fakeEntitiesConfig = { tag: 'entities-config' };
+      // a { memory, memoryConfig } handle — it never calls into them here.
       const fakeUserMemory = { tag: 'user' };
       const fakeUserConfig = { tag: 'user-config' };
 
@@ -404,8 +402,6 @@ describe('POST /api/agent/v1/chat (orchestration runtime persistence)', () => {
         mastra: mastra as never,
         pool,
         chatOrchestration: captureOrchestration,
-        entitiesMemory: fakeEntitiesMemory as never,
-        entitiesMemoryConfig: fakeEntitiesConfig as never,
         userMemory: fakeUserMemory as never,
         userMemoryConfig: fakeUserConfig as never,
       });
@@ -422,12 +418,6 @@ describe('POST /api/agent/v1/chat (orchestration runtime persistence)', () => {
       await res.text();
 
       expect(capturedCtx?.threadId).toBe('orch-mem-thread-1');
-      expect(
-        (capturedCtx?.entitiesMemory as { memory: unknown; memoryConfig: unknown }).memory,
-      ).toBe(fakeEntitiesMemory);
-      expect(
-        (capturedCtx?.entitiesMemory as { memory: unknown; memoryConfig: unknown }).memoryConfig,
-      ).toBe(fakeEntitiesConfig);
       expect((capturedCtx?.userMemory as { memory: unknown; memoryConfig: unknown }).memory).toBe(
         fakeUserMemory,
       );

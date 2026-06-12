@@ -9,7 +9,6 @@ import { MastraStorageExporter, Observability } from '@mastra/observability';
 import {
   type AgentResult,
   type Citation,
-  RC_AGENT_MEMORY,
   RC_THREAD_ID,
   type SpecializedAgentRunCtx,
   type SpecializedAgentSpec,
@@ -258,7 +257,6 @@ async function buildOrchestrator(
   rc.set('tenant_id', ctx.tenantId);
   rc.set('effective_permissions', ctx.effectivePermissions ?? new Set<string>());
   if (ctx.threadId) rc.set(RC_THREAD_ID, ctx.threadId);
-  if (ctx.entitiesMemory) rc.set(RC_AGENT_MEMORY, ctx.entitiesMemory);
 
   const tools: Record<string, unknown> = makeOrchestratorTools({
     taskAnalyzer: deps.taskAnalyzer,

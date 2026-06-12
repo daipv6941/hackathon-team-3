@@ -20,16 +20,6 @@ export type AgentRouteDeps = {
     warn: (obj: unknown, msg?: string) => void;
   };
   /**
-   * Thread-scoped conversation-entities Memory + its MemoryConfig. Injected
-   * into requestContext under RC_AGENT_MEMORY by the chat route so tools can do
-   * server-side, per-conversation entity writes (entity recorder, task-ref
-   * resolver). Keyed on the real chat thread id, not the user resource, so
-   * entities never leak across conversations. Optional because tests may
-   * construct routes without a configured Memory.
-   */
-  entitiesMemory?: Memory;
-  entitiesMemoryConfig?: MemoryConfig;
-  /**
    * Resource-scoped userContext Memory (the supervisor tree's GuardedMemory) +
    * its MemoryConfig. The orchestration chat branch passes both into the run
    * ctx so the orchestrator can inject userContext into its prompt and expose

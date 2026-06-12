@@ -141,8 +141,8 @@ export function makeProposeAssignmentTool(deps: ProposeAssignmentDeps) {
       const skills = analyzed.result.skills ?? [];
       const cardTitle = analyzed.result.title ?? title;
       // Server-owned exposure tracking (thread-scoped working memory): the
-      // recorder no-ops without RC_AGENT_MEMORY/RC_THREAD_ID and swallows its
-      // own failures — never breaks the staffing answer.
+      // recorder no-ops without a registered conversation memory / RC_THREAD_ID
+      // and swallows its own failures — never breaks the staffing answer.
       await recordEntityExposure(toolCtx as never, {
         lastDiscussedTaskId: taskId,
         ...(analyzed.result.title

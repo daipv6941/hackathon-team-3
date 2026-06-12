@@ -16,8 +16,6 @@ export interface RunCtx {
   effectivePermissions?: ReadonlySet<string>;
   /** The real chat thread id (chat inline runs only). */
   threadId?: string;
-  /** Thread-scoped conversation-entities memory handle (chat inline runs only). */
-  entitiesMemory?: AgentMemoryHandle;
   /** Resource-scoped userContext memory handle (chat inline runs only). */
   userMemory?: AgentMemoryHandle;
   /** Per-turn model override (chat inline runs only) — forwarded into each

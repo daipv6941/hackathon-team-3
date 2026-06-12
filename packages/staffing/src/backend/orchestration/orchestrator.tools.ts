@@ -142,8 +142,8 @@ export function makeOrchestratorTools(deps: OrchestratorToolDeps) {
         subCtx,
       );
       // Server-owned exposure tracking (thread-scoped working memory): the
-      // recorder no-ops without RC_AGENT_MEMORY/RC_THREAD_ID and swallows its
-      // own failures — never breaks the staffing answer.
+      // recorder no-ops without a registered conversation memory / RC_THREAD_ID
+      // and swallows its own failures — never breaks the staffing answer.
       if (intent === 'find_tasks' && res.result.tasks?.length) {
         await recordEntityExposure(toolCtx as never, {
           recentTasks: res.result.tasks.map((t) => ({ taskId: t.taskId, title: t.title })),
