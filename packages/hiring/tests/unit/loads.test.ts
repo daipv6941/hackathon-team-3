@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as schema from '../../src/backend/db/schema.ts';
 import { HIRING_EVENTS } from '../../src/events/index.ts';
-import { HIRING_PERMISSIONS } from '../../src/rbac.ts';
+import { hiringRbac } from '../../src/rbac.ts';
 
 describe('Hiring module loads', () => {
   it('exports schema correctly', () => {
@@ -19,9 +19,10 @@ describe('Hiring module loads', () => {
     expect(HIRING_EVENTS['hiring.candidate.screened']).toBeDefined();
   });
 
-  it('exports permissions correctly', () => {
-    expect(HIRING_PERMISSIONS).toBeDefined();
-    expect(HIRING_PERMISSIONS['hiring:request:create']).toBeDefined();
-    expect(HIRING_PERMISSIONS['hiring:jd:approve']).toBeDefined();
+  it('exports RBAC manifest correctly', () => {
+    expect(hiringRbac).toBeDefined();
+    expect(hiringRbac.module).toBe('hiring');
+    expect(hiringRbac.permissions.some((p) => p.key === 'hiring.request.create')).toBe(true);
+    expect(hiringRbac.permissions.some((p) => p.key === 'hiring.jd.approve')).toBe(true);
   });
 });
