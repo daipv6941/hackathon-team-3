@@ -3,11 +3,57 @@
 import { Button, Card } from '@seta/shared-ui';
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
 import { AlertCircle, ArrowLeft, CheckCircle2, Clock, Edit2, RotateCw, Zap } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const Route = createFileRoute('/_authed/hiring/requests/$requestId')({
   component: RequestDetailPage,
 });
+
+interface JobDescription {
+  jdId: string;
+  requestId: string;
+  position: string;
+  seniorityLevel: string;
+  minYoe?: number;
+  maxYoe?: number;
+  mustHaveSkills?: string;
+  niceToHaveSkills?: string;
+  englishLevelRequired?: string;
+  workMode?: string;
+  salaryRange?: string;
+  keyResponsibilities?: string;
+  jdFullText?: string;
+  status?: string;
+  agentClarityScore?: string | number;
+  createdAt?: string;
+}
+
+interface ShortlistStatistics {
+  totalCandidates: number;
+  passCandidates: number;
+  passPercentage: number;
+  needMoreInfoCandidates: number;
+  needMoreInfoPercentage: number;
+  rejectCandidates: number;
+  rejectPercentage: number;
+}
+
+interface CandidateInfo {
+  candidateName: string;
+  fitScore: string;
+  fitSummary?: string;
+  interviewQuestions?: string[];
+  followUpQuestions?: string[];
+  rejectReason?: string;
+  categoryScores?: Record<string, unknown>;
+}
+
+interface ShortlistResults {
+  statistics?: ShortlistStatistics;
+  passCandidatesList?: CandidateInfo[];
+  needMoreInfoList?: CandidateInfo[];
+  rejectCandidatesList?: CandidateInfo[];
+}
 
 interface HiringRequest {
   id: string;
@@ -22,7 +68,7 @@ interface HiringRequest {
   teamSkillGap?: string;
   keyDeliverables?: string;
   jdId?: string;
-  shortlistResults?: Record<string, unknown>;
+  shortlistResults?: ShortlistResults;
 }
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -78,93 +124,85 @@ function RequestDetailPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [jd, setJd] = useState<Record<string, unknown> | null>(null);
-  const [shortlistResults, setShortlistResults] = useState<Record<string, unknown> | null>(null);
+  const [jd, setJd] = useState<JobDescription | null>(null);
+  const [shortlistResults, setShortlistResults] = useState<ShortlistResults | null>(null);
   const loadedRef = useRef(false);
 
+  const loadJd = useCallback(async (jdId: string) => {
+    if (!jdId) {
+      console.warn('No jdId provided');
+      return;
+    }
+
+    const response = await fetch(`http://localhost:3000/hiring/v1/jd/${jdId}`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (response.ok) {
+      const jdData = await response.json();
+      setJd(jdData);
+    }
+  }, []);
+
+  const loadShortlistResults = useCallback(async (rId: string) => {
+    const response = await fetch(`http://localhost:3000/hiring/v1/shortlist/results/${rId}`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      setShortlistResults(data);
+    }
+  }, []);
+
+  const loadRequest = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      console.log('Loading request:', requestId);
+      const response = await fetch('http://localhost:3000/hiring/v1/requests', {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (!response.ok) throw new Error('Failed to load requests');
+      const data = await response.json();
+
+      const found = (data.requests || []).find((r: HiringRequest) => r.requestId === requestId);
+      console.log('Found request:', found);
+      if (found) {
+        setRequest(found);
+        setSelectedStatus(found.requestStatus);
+        // Load JD if approved and jdId exists
+        if (
+          found.jdId &&
+          (found.requestStatus === 'JD Approved' ||
+            found.requestStatus === 'CV Screening' ||
+            found.requestStatus === 'Shortlist Ready')
+        ) {
+          await loadJd(found.jdId);
+        }
+        // Load shortlist results if screening or ready
+        if (found.requestStatus === 'CV Screening' || found.requestStatus === 'Shortlist Ready') {
+          await loadShortlistResults(found.requestId);
+        }
+      } else {
+        console.warn('Request not found:', requestId);
+      }
+    } catch (error) {
+      console.error('Load request error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [requestId, loadJd, loadShortlistResults]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ref-based initialization pattern
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
-
-    const loadJd = async (jdId: string) => {
-      try {
-        if (!jdId) {
-          console.warn('No jdId provided');
-          return;
-        }
-
-        const response = await fetch(`http://localhost:3000/hiring/v1/jd/${jdId}`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const jdData = await response.json();
-          setJd(jdData);
-        }
-      } catch (error) {
-        console.error('Load JD error:', error);
-      }
-    };
-
-    const loadShortlistResults = async (rId: string) => {
-      try {
-        const response = await fetch(`http://localhost:3000/hiring/v1/shortlist/results/${rId}`, {
-          method: 'GET',
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setShortlistResults(data);
-        }
-      } catch (error) {
-        console.error('Load shortlist results error:', error);
-      }
-    };
-
-    const loadRequest = async () => {
-      try {
-        setIsLoading(true);
-        console.log('Loading request:', requestId);
-        const response = await fetch('http://localhost:3000/hiring/v1/requests', {
-          method: 'GET',
-          credentials: 'include',
-        });
-
-        if (!response.ok) throw new Error('Failed to load requests');
-        const data = await response.json();
-
-        const found = (data.requests || []).find((r: HiringRequest) => r.requestId === requestId);
-        console.log('Found request:', found);
-        if (found) {
-          setRequest(found);
-          setSelectedStatus(found.requestStatus);
-          // Load JD if approved and jdId exists
-          if (
-            found.jdId &&
-            (found.requestStatus === 'JD Approved' ||
-              found.requestStatus === 'CV Screening' ||
-              found.requestStatus === 'Shortlist Ready')
-          ) {
-            await loadJd(found.jdId);
-          }
-          // Load shortlist results if screening or ready
-          if (found.requestStatus === 'CV Screening' || found.requestStatus === 'Shortlist Ready') {
-            await loadShortlistResults(found.requestId);
-          }
-        } else {
-          console.warn('Request not found:', requestId);
-        }
-      } catch (error) {
-        console.error('Load request error:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadRequest();
-  }, [requestId]);
+  }, []);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!request) return;
@@ -347,7 +385,7 @@ function RequestDetailPage() {
                 {jd.agentClarityScore && (
                   <div className="text-right">
                     <div className="text-2xl font-bold text-primary">
-                      {Math.round(jd.agentClarityScore)}
+                      {Math.round(Number(jd.agentClarityScore))}
                     </div>
                     <p className="text-xs text-ink-subtle">Clarity Score</p>
                   </div>
@@ -477,7 +515,7 @@ function RequestDetailPage() {
                 <div className="mt-6">
                   <h3 className="font-semibold text-green-700">✅ Pass Candidates</h3>
                   <div className="mt-3 space-y-3">
-                    {shortlistResults.passCandidatesList.map((c: Record<string, unknown>) => (
+                    {shortlistResults.passCandidatesList?.map((c: CandidateInfo) => (
                       <div
                         key={`${c.candidateName}-${c.fitScore}`}
                         className="rounded border border-green-200 bg-green-50 p-3"
@@ -511,25 +549,25 @@ function RequestDetailPage() {
                 <div className="mt-6">
                   <h3 className="font-semibold text-yellow-700">⚠️ Need More Info</h3>
                   <div className="mt-3 space-y-3">
-                    {shortlistResults.needMoreInfoList.map((c: Record<string, unknown>) => (
+                    {shortlistResults.needMoreInfoList?.map((c: CandidateInfo) => (
                       <div
                         key={`${c.candidateName}-${c.fitScore}`}
                         className="rounded border border-yellow-200 bg-yellow-50 p-3"
                       >
                         <div className="flex justify-between">
-                          <span className="font-medium">{c.candidateName as string}</span>
+                          <span className="font-medium">{c.candidateName}</span>
                           <span className="text-sm font-bold text-yellow-700">
-                            {c.fitScore as number}/100
+                            {c.fitScore}/100
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-ink-subtle">{c.fitSummary as string}</p>
-                        {c.followUpQuestions && (c.followUpQuestions as string[]).length > 0 && (
+                        <p className="mt-1 text-xs text-ink-subtle">{c.fitSummary}</p>
+                        {c.followUpQuestions && c.followUpQuestions.length > 0 && (
                           <div className="mt-2">
                             <p className="text-xs font-medium text-yellow-700">
                               Follow-up Questions:
                             </p>
                             <ul className="mt-1 space-y-1">
-                              {(c.followUpQuestions as string[]).slice(0, 3).map((q: string) => (
+                              {c.followUpQuestions.slice(0, 3).map((q: string) => (
                                 <li key={q} className="text-xs text-ink">
                                   • {q}
                                 </li>
@@ -547,20 +585,16 @@ function RequestDetailPage() {
                 <div className="mt-6">
                   <h3 className="font-semibold text-red-700">❌ Reject Candidates</h3>
                   <div className="mt-3 space-y-2">
-                    {shortlistResults.rejectCandidatesList.map((c: Record<string, unknown>) => (
+                    {shortlistResults.rejectCandidatesList?.map((c: CandidateInfo) => (
                       <div
                         key={`${c.candidateName}-${c.fitScore}`}
                         className="rounded border border-red-200 bg-red-50 p-3"
                       >
                         <div className="flex justify-between">
-                          <span className="font-medium text-red-900">
-                            {c.candidateName as string}
-                          </span>
-                          <span className="text-xs font-bold text-red-700">
-                            {c.fitScore as number}/100
-                          </span>
+                          <span className="font-medium text-red-900">{c.candidateName}</span>
+                          <span className="text-xs font-bold text-red-700">{c.fitScore}/100</span>
                         </div>
-                        <p className="mt-1 text-xs text-red-700">{c.rejectReason as string}</p>
+                        <p className="mt-1 text-xs text-red-700">{c.rejectReason}</p>
                       </div>
                     ))}
                   </div>

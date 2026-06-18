@@ -113,8 +113,12 @@ export function ThreadList() {
         'cv-screening',
         'confirmation',
       ] as const;
-      const phase = validPhases.includes(thread.current_phase as string)
-        ? (thread.current_phase as (typeof validPhases)[number])
+      type ValidPhase = (typeof validPhases)[number];
+      const isValidPhase = (value: unknown): value is ValidPhase => {
+        return typeof value === 'string' && validPhases.includes(value as ValidPhase);
+      };
+      const phase: ValidPhase = isValidPhase(thread.current_phase)
+        ? thread.current_phase
         : 'initial';
       actions.setPhase(phase);
 
