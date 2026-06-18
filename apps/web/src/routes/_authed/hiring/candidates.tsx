@@ -69,7 +69,7 @@ function CandidatesPage() {
     }
   }, [statusFilter]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: ref-based initialization pattern
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;

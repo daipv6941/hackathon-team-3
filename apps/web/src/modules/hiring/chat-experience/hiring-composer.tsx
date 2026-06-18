@@ -27,6 +27,7 @@ export function HiringComposer() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [isLoadingExistingThread, setIsLoadingExistingThread] = useState(false);
   const triggeredThreadsRef = useRef<Set<string>>(new Set());
+  const prevPhaseRef = useRef<string | null>(null);
 
   const triggerInitialPhaseWorkflow = useCallback(
     async (tid: string, requestData?: Partial<NewRequestData>) => {
@@ -143,41 +144,54 @@ export function HiringComposer() {
     }
   }, [state.selectedRequestId, actions]);
 
-  // Consolidate thread creation and loading logic
+  // Load existing thread from localStorage on mount only
+  // biome-ignore lint/correctness/useExhaustiveDependencies: checking initial state only
   useEffect(() => {
     const savedThreadId = localStorage.getItem('currentThreadId');
-    const shouldLoadExisting =
-      savedThreadId && savedThreadId !== threadId && !isLoadingExistingThread;
-    const shouldCreateNew =
+    if (savedThreadId && savedThreadId !== threadId && !isLoadingExistingThread) {
+      console.log('📂 Loading existing thread:', savedThreadId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIsLoadingExistingThread(true);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setThreadId(savedThreadId);
+    }
+  }, []);
+
+  // Create new thread when needed
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    if (
       state.currentPhase === 'initial' &&
       state.selectedRequestId &&
       state.selectedRequestId !== 'creating' &&
       !threadId &&
-      !isLoadingExistingThread;
-    const shouldReset =
-      state.selectedRequestId &&
-      state.selectedRequestId !== 'creating' &&
-      state.currentPhase !== 'initial';
-
-    if (shouldLoadExisting) {
-      console.log('📂 Loading existing thread:', savedThreadId);
-      setIsLoadingExistingThread(true);
-      setThreadId(savedThreadId);
-    } else if (shouldCreateNew) {
+      !isLoadingExistingThread
+    ) {
       console.log('✅ Creating thread for request:', state.selectedRequestId);
       createThread();
-    } else if (shouldReset) {
-      console.log('🔄 Request changed, resetting thread:', state.selectedRequestId);
-      setThreadId(null);
-      setIsLoadingExistingThread(false);
     }
   }, [
-    state.selectedRequestId,
     state.currentPhase,
+    state.selectedRequestId,
     threadId,
     isLoadingExistingThread,
     createThread,
   ]);
+
+  // Reset thread when request changes and phase is not initial
+  useEffect(() => {
+    if (
+      state.selectedRequestId &&
+      state.selectedRequestId !== 'creating' &&
+      state.currentPhase !== 'initial' &&
+      prevPhaseRef.current === 'initial'
+    ) {
+      console.log('🔄 Request changed, resetting thread:', state.selectedRequestId);
+      setThreadId(null);
+      setIsLoadingExistingThread(false);
+    }
+    prevPhaseRef.current = state.currentPhase;
+  }, [state.selectedRequestId, state.currentPhase]);
 
   // Auto-trigger API call ONLY after CREATING a new thread (not loading existing)
   useEffect(() => {
