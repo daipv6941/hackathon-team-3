@@ -11,7 +11,20 @@ describe('permission-keys codegen', () => {
   it('committed file matches a fresh generation', () => {
     const path = 'packages/shared-rbac/src/generated/permission-keys.ts';
     const before = readFileSync(resolve(repoRoot, path), 'utf8');
-    execSync('pnpm gen:rbac', { cwd: repoRoot });
+
+    try {
+      execSync('pnpm exec tsx scripts/gen-rbac.ts', {
+        cwd: repoRoot,
+        stdio: 'pipe',
+      });
+    } catch (e: any) {
+      console.error('\n=== EXEC FAILED ===');
+      console.error('repoRoot =', repoRoot);
+      console.error('STDOUT:\n', e.stdout?.toString());
+      console.error('STDERR:\n', e.stderr?.toString());
+      throw e;
+    }
+
     const after = readFileSync(resolve(repoRoot, path), 'utf8');
 
     if (before !== after) {
