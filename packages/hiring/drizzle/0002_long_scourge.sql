@@ -1,1 +1,0 @@
-ALTER TABLE "hiring"."requests" ADD COLUMN "jd_id" varchar(50);

@@ -1,1 +1,0 @@
-ALTER TABLE "hiring"."candidates" ADD COLUMN "status" varchar(20) DEFAULT 'active' NOT NULL;

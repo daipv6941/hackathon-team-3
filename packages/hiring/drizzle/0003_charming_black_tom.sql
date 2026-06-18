@@ -1,1 +1,0 @@
-ALTER TABLE "hiring"."requests" ADD COLUMN "shortlist_report" jsonb;
