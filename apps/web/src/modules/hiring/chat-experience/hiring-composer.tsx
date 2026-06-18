@@ -3,7 +3,7 @@
 import { Button, Input } from '@seta/shared-ui';
 import { Send } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useHiringChat } from './hiring-provider';
+import { useHiringChat } from './use-hiring-chat';
 
 const FORM_FIELDS = [
   'position_title',
@@ -143,47 +143,41 @@ export function HiringComposer() {
     }
   }, [state.selectedRequestId, actions]);
 
-  // Create thread only when STARTING a new conversation (not loading existing)
+  // Consolidate thread creation and loading logic
   useEffect(() => {
-    console.log('🔍 Thread creation check:', {
-      currentPhase: state.currentPhase,
-      selectedRequestId: state.selectedRequestId,
-      threadId,
-      isLoadingExistingThread,
-      shouldCreate:
-        state.currentPhase === 'initial' &&
-        state.selectedRequestId &&
-        state.selectedRequestId !== 'creating' &&
-        !threadId &&
-        !isLoadingExistingThread,
-    });
-
-    if (
+    const savedThreadId = localStorage.getItem('currentThreadId');
+    const shouldLoadExisting =
+      savedThreadId && savedThreadId !== threadId && !isLoadingExistingThread;
+    const shouldCreateNew =
       state.currentPhase === 'initial' &&
       state.selectedRequestId &&
       state.selectedRequestId !== 'creating' &&
       !threadId &&
-      !isLoadingExistingThread // Only create if NOT loading an existing thread
-    ) {
+      !isLoadingExistingThread;
+    const shouldReset =
+      state.selectedRequestId &&
+      state.selectedRequestId !== 'creating' &&
+      state.currentPhase !== 'initial';
+
+    if (shouldLoadExisting) {
+      console.log('📂 Loading existing thread:', savedThreadId);
+      setIsLoadingExistingThread(true);
+      setThreadId(savedThreadId);
+    } else if (shouldCreateNew) {
       console.log('✅ Creating thread for request:', state.selectedRequestId);
       createThread();
-    }
-  }, [
-    state.selectedRequestId,
-    state.currentPhase,
-    isLoadingExistingThread,
-    createThread,
-    threadId,
-  ]);
-
-  // Reset thread when request changes (starting new workflow)
-  useEffect(() => {
-    if (state.selectedRequestId && state.selectedRequestId !== 'creating') {
+    } else if (shouldReset) {
       console.log('🔄 Request changed, resetting thread:', state.selectedRequestId);
       setThreadId(null);
       setIsLoadingExistingThread(false);
     }
-  }, [state.selectedRequestId]);
+  }, [
+    state.selectedRequestId,
+    state.currentPhase,
+    threadId,
+    isLoadingExistingThread,
+    createThread,
+  ]);
 
   // Auto-trigger API call ONLY after CREATING a new thread (not loading existing)
   useEffect(() => {
@@ -205,16 +199,6 @@ export function HiringComposer() {
     newRequestData,
     triggerInitialPhaseWorkflow,
   ]);
-
-  // Check if we're loading an existing thread (from sidebar click)
-  useEffect(() => {
-    const savedThreadId = localStorage.getItem('currentThreadId');
-    if (savedThreadId && savedThreadId !== threadId && !isLoadingExistingThread) {
-      // We're loading an existing thread from sidebar
-      setIsLoadingExistingThread(true);
-      setThreadId(savedThreadId);
-    }
-  }, [threadId, isLoadingExistingThread]);
 
   const handleCreateRequestFlow = (userInput: string) => {
     const currentField = FORM_FIELDS[currentFieldIndex];

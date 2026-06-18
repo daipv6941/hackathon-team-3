@@ -3,7 +3,7 @@
 import { Button, Card, Input } from '@seta/shared-ui';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Plus, Trash2, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export const Route = createFileRoute('/_authed/hiring/candidates')({
   component: CandidatesPage,
@@ -44,33 +44,33 @@ function CandidatesPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const loadCandidates = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const url =
-        statusFilter === 'all'
-          ? 'http://localhost:3000/hiring/v1/candidates'
-          : `http://localhost:3000/hiring/v1/candidates?status=${statusFilter}`;
-
-      const response = await fetch(url, {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to load candidates');
-
-      const data = await response.json();
-      setCandidates(data.candidates || []);
-    } catch (error) {
-      console.error('Load candidates error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [statusFilter]);
-
   useEffect(() => {
+    const loadCandidates = async () => {
+      try {
+        setIsLoading(true);
+        const url =
+          statusFilter === 'all'
+            ? 'http://localhost:3000/hiring/v1/candidates'
+            : `http://localhost:3000/hiring/v1/candidates?status=${statusFilter}`;
+
+        const response = await fetch(url, {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) throw new Error('Failed to load candidates');
+
+        const data = await response.json();
+        setCandidates(data.candidates || []);
+      } catch (error) {
+        console.error('Load candidates error:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     loadCandidates();
-  }, [loadCandidates]);
+  }, [statusFilter]);
 
   const handleAddCandidate = async (e: React.FormEvent) => {
     e.preventDefault();

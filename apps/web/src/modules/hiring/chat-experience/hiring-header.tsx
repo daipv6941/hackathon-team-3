@@ -2,7 +2,7 @@
 
 import { Button } from '@seta/shared-ui';
 import { Menu, Plus, RotateCcw } from 'lucide-react';
-import { useHiringChat } from './hiring-provider';
+import { useHiringChat } from './use-hiring-chat';
 
 export interface HiringHeaderProps {
   onOpenMobileNav?: () => void;

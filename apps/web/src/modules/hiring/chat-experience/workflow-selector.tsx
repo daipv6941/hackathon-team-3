@@ -1,7 +1,7 @@
 'use client';
 
 import { FileText, Users } from 'lucide-react';
-import { useHiringChat } from './hiring-provider';
+import { useHiringChat } from './use-hiring-chat';
 
 export type WorkflowType = 'jd-creation' | 'cv-screening';
 

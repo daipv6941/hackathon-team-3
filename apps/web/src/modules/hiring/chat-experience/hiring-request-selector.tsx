@@ -1,8 +1,8 @@
 'use client';
 
 import { ChevronRight, Plus } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import { useHiringChat } from './hiring-provider';
+import { useEffect, useRef, useState } from 'react';
+import { useHiringChat } from './use-hiring-chat';
 
 interface HiringRequest {
   id: string;
@@ -18,34 +18,38 @@ export function HiringRequestSelector() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [requests, setRequests] = useState<HiringRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  const loadRequests = useCallback(async () => {
-    try {
-      const response = await fetch('http://localhost:3000/hiring/v1/requests', {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to load requests');
-      const data = await response.json();
-
-      // Filter to only show requests ready for JD workflow (New or JD Draft)
-      const availableRequests = (data.requests || []).filter(
-        (r: HiringRequest) => r.requestStatus === 'New' || r.requestStatus === 'JD Draft',
-      );
-
-      setRequests(availableRequests);
-    } catch (error) {
-      console.error('Load requests error:', error);
-      setRequests([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const loadedRef = useRef(false);
 
   useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+
+    const loadRequests = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/hiring/v1/requests', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) throw new Error('Failed to load requests');
+        const data = await response.json();
+
+        // Filter to only show requests ready for JD workflow (New or JD Draft)
+        const availableRequests = (data.requests || []).filter(
+          (r: HiringRequest) => r.requestStatus === 'New' || r.requestStatus === 'JD Draft',
+        );
+
+        setRequests(availableRequests);
+      } catch (error) {
+        console.error('Load requests error:', error);
+        setRequests([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     loadRequests();
-  }, [loadRequests]);
+  }, []);
 
   const handleSelectRequest = (request: HiringRequest) => {
     setSelectedId(request.id);

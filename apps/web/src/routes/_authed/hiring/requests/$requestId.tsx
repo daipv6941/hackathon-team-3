@@ -3,7 +3,7 @@
 import { Button, Card } from '@seta/shared-ui';
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
 import { AlertCircle, ArrowLeft, CheckCircle2, Clock, Edit2, RotateCw, Zap } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export const Route = createFileRoute('/_authed/hiring/requests/$requestId')({
   component: RequestDetailPage,
@@ -22,7 +22,7 @@ interface HiringRequest {
   teamSkillGap?: string;
   keyDeliverables?: string;
   jdId?: string;
-  shortlistResults?: any;
+  shortlistResults?: Record<string, unknown>;
 }
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -78,89 +78,93 @@ function RequestDetailPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [jd, setJd] = useState<any>(null);
-  const [shortlistResults, setShortlistResults] = useState<any>(null);
-
-  const loadJd = useCallback(async (jdId: string) => {
-    try {
-      if (!jdId) {
-        console.warn('No jdId provided');
-        return;
-      }
-
-      const response = await fetch(`http://localhost:3000/hiring/v1/jd/${jdId}`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const jdData = await response.json();
-        setJd(jdData);
-      }
-    } catch (error) {
-      console.error('Load JD error:', error);
-    }
-  }, []);
-
-  const loadShortlistResults = useCallback(async (rId: string) => {
-    try {
-      const response = await fetch(`http://localhost:3000/hiring/v1/shortlist/results/${rId}`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setShortlistResults(data);
-      }
-    } catch (error) {
-      console.error('Load shortlist results error:', error);
-    }
-  }, []);
-
-  const loadRequest = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      console.log('Loading request:', requestId);
-      const response = await fetch('http://localhost:3000/hiring/v1/requests', {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to load requests');
-      const data = await response.json();
-
-      const found = (data.requests || []).find((r: HiringRequest) => r.requestId === requestId);
-      console.log('Found request:', found);
-      if (found) {
-        setRequest(found);
-        setSelectedStatus(found.requestStatus);
-        // Load JD if approved and jdId exists
-        if (
-          found.jdId &&
-          (found.requestStatus === 'JD Approved' ||
-            found.requestStatus === 'CV Screening' ||
-            found.requestStatus === 'Shortlist Ready')
-        ) {
-          loadJd(found.jdId);
-        }
-        // Load shortlist results if screening or ready
-        if (found.requestStatus === 'CV Screening' || found.requestStatus === 'Shortlist Ready') {
-          loadShortlistResults(found.requestId);
-        }
-      } else {
-        console.warn('Request not found:', requestId);
-      }
-    } catch (error) {
-      console.error('Load request error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [requestId, loadJd, loadShortlistResults]);
+  const [jd, setJd] = useState<Record<string, unknown> | null>(null);
+  const [shortlistResults, setShortlistResults] = useState<Record<string, unknown> | null>(null);
+  const loadedRef = useRef(false);
 
   useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+
+    const loadJd = async (jdId: string) => {
+      try {
+        if (!jdId) {
+          console.warn('No jdId provided');
+          return;
+        }
+
+        const response = await fetch(`http://localhost:3000/hiring/v1/jd/${jdId}`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          const jdData = await response.json();
+          setJd(jdData);
+        }
+      } catch (error) {
+        console.error('Load JD error:', error);
+      }
+    };
+
+    const loadShortlistResults = async (rId: string) => {
+      try {
+        const response = await fetch(`http://localhost:3000/hiring/v1/shortlist/results/${rId}`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setShortlistResults(data);
+        }
+      } catch (error) {
+        console.error('Load shortlist results error:', error);
+      }
+    };
+
+    const loadRequest = async () => {
+      try {
+        setIsLoading(true);
+        console.log('Loading request:', requestId);
+        const response = await fetch('http://localhost:3000/hiring/v1/requests', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) throw new Error('Failed to load requests');
+        const data = await response.json();
+
+        const found = (data.requests || []).find((r: HiringRequest) => r.requestId === requestId);
+        console.log('Found request:', found);
+        if (found) {
+          setRequest(found);
+          setSelectedStatus(found.requestStatus);
+          // Load JD if approved and jdId exists
+          if (
+            found.jdId &&
+            (found.requestStatus === 'JD Approved' ||
+              found.requestStatus === 'CV Screening' ||
+              found.requestStatus === 'Shortlist Ready')
+          ) {
+            await loadJd(found.jdId);
+          }
+          // Load shortlist results if screening or ready
+          if (found.requestStatus === 'CV Screening' || found.requestStatus === 'Shortlist Ready') {
+            await loadShortlistResults(found.requestId);
+          }
+        } else {
+          console.warn('Request not found:', requestId);
+        }
+      } catch (error) {
+        console.error('Load request error:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     loadRequest();
-  }, [loadRequest]);
+  }, [requestId]);
 
   const handleStatusChange = async (newStatus: string) => {
     if (!request) return;
@@ -473,7 +477,7 @@ function RequestDetailPage() {
                 <div className="mt-6">
                   <h3 className="font-semibold text-green-700">✅ Pass Candidates</h3>
                   <div className="mt-3 space-y-3">
-                    {shortlistResults.passCandidatesList.map((c: any) => (
+                    {shortlistResults.passCandidatesList.map((c: Record<string, unknown>) => (
                       <div
                         key={`${c.candidateName}-${c.fitScore}`}
                         className="rounded border border-green-200 bg-green-50 p-3"
@@ -519,21 +523,20 @@ function RequestDetailPage() {
                           </span>
                         </div>
                         <p className="mt-1 text-xs text-ink-subtle">{c.fitSummary as string}</p>
-                        {(c.followUpQuestions as any[]) &&
-                          (c.followUpQuestions as any[]).length > 0 && (
-                            <div className="mt-2">
-                              <p className="text-xs font-medium text-yellow-700">
-                                Follow-up Questions:
-                              </p>
-                              <ul className="mt-1 space-y-1">
-                                {(c.followUpQuestions as any[]).slice(0, 3).map((q: string) => (
-                                  <li key={q} className="text-xs text-ink">
-                                    • {q}
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
+                        {c.followUpQuestions && (c.followUpQuestions as string[]).length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-medium text-yellow-700">
+                              Follow-up Questions:
+                            </p>
+                            <ul className="mt-1 space-y-1">
+                              {(c.followUpQuestions as string[]).slice(0, 3).map((q: string) => (
+                                <li key={q} className="text-xs text-ink">
+                                  • {q}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

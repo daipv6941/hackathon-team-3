@@ -12,7 +12,7 @@ export interface ChatScreenProps {
   threadId?: string;
 }
 
-function ChatScreenContent(_props: ChatScreenProps) {
+function ChatScreenContent() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (

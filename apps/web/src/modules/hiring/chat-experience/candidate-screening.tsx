@@ -4,7 +4,7 @@ import { Button } from '@seta/shared-ui';
 import { CheckCircle2, Loader2, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { CandidateCard } from './candidate-card';
-import { useHiringChat } from './hiring-provider';
+import { useHiringChat } from './use-hiring-chat';
 
 interface Candidate {
   cvId: string;
@@ -70,7 +70,7 @@ export function CandidateScreening({ requestId, jdId: initialJdId }: CandidateSc
     };
 
     loadCandidates();
-  }, [requestId, actions.addMessage]);
+  }, [requestId, actions]);
 
   const handleToggleSelect = (cvId: string) => {
     const newSelected = new Set(selectedCvIds);

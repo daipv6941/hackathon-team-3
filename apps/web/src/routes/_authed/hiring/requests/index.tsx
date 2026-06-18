@@ -3,7 +3,7 @@
 import { Button, Card } from '@seta/shared-ui';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { AlertCircle, CheckCircle2, ChevronRight, Clock, Zap } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export const Route = createFileRoute('/_authed/hiring/requests/')({
   component: RequestsPage,
@@ -67,29 +67,33 @@ function RequestsPage() {
   const [requests, setRequests] = useState<HiringRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const loadRequests = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch('http://localhost:3000/hiring/v1/requests', {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to load requests');
-      const data = await response.json();
-      setRequests(data.requests || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
-      console.error('Load requests error:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const loadedRef = useRef(false);
 
   useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+
+    const loadRequests = async () => {
+      try {
+        setIsLoading(true);
+        const response = await fetch('http://localhost:3000/hiring/v1/requests', {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        if (!response.ok) throw new Error('Failed to load requests');
+        const data = await response.json();
+        setRequests(data.requests || []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+        console.error('Load requests error:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
     loadRequests();
-  }, [loadRequests]);
+  }, []);
 
   return (
     <div className="space-y-6 p-6">

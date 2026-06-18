@@ -2,8 +2,8 @@
 
 import { Button, Input } from '@seta/shared-ui';
 import { MessageSquare, Plus, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import { useHiringChat } from './hiring-provider';
+import { useEffect, useRef, useState } from 'react';
+import { useHiringChat } from './use-hiring-chat';
 
 interface Thread {
   id: string;
@@ -18,8 +18,9 @@ export function ThreadList() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const loadedRef = useRef(false);
 
-  const loadThreads = useCallback(async () => {
+  const loadThreads = async () => {
     try {
       setIsLoading(true);
       const response = await fetch('http://localhost:3000/hiring/v1/threads', {
@@ -35,14 +36,18 @@ export function ThreadList() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  };
 
   // Load threads on mount
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ref-based initialization pattern
   useEffect(() => {
+    if (loadedRef.current) return;
+    loadedRef.current = true;
     loadThreads();
-  }, [loadThreads]);
+  }, []);
 
   // Reload threads when new thread is created
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loadThreads called in event handler
   useEffect(() => {
     const handleThreadCreated = () => {
       loadThreads();
@@ -50,7 +55,7 @@ export function ThreadList() {
 
     window.addEventListener('hiring:thread-created', handleThreadCreated);
     return () => window.removeEventListener('hiring:thread-created', handleThreadCreated);
-  }, [loadThreads]);
+  }, []);
 
   const handleCreateNew = () => {
     actions.clearMessages();
@@ -108,7 +113,7 @@ export function ThreadList() {
         'cv-screening',
         'confirmation',
       ] as const;
-      const phase = validPhases.includes(thread.current_phase as any)
+      const phase = validPhases.includes(thread.current_phase as string)
         ? (thread.current_phase as (typeof validPhases)[number])
         : 'initial';
       actions.setPhase(phase);

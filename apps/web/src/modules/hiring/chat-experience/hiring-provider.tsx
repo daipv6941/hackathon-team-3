@@ -1,48 +1,12 @@
 'use client';
 
-import { createContext, useCallback, useContext, useState } from 'react';
-
-export interface HiringMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-  type?: 'text' | 'action' | 'result';
-  metadata?: Record<string, unknown>;
-}
-
-export interface HiringChatState {
-  messages: HiringMessage[];
-  isLoading: boolean;
-  currentPhase:
-    | 'selection'
-    | 'initial'
-    | 'jd-creation'
-    | 'jd-approval'
-    | 'cv-screening'
-    | 'confirmation'
-    | 'complete';
-  selectedFlow?: 'jd-draft' | 'cv-shortlist';
-  selectedRequestId?: string;
-  selectedJobId?: string;
-  historyLoading: boolean;
-}
-
-interface HiringContextType {
-  state: HiringChatState;
-  actions: {
-    addMessage: (message: Omit<HiringMessage, 'id' | 'timestamp'>) => void;
-    setMessages: (messages: Omit<HiringMessage, 'id' | 'timestamp'>[]) => void;
-    setLoading: (loading: boolean) => void;
-    setPhase: (phase: HiringChatState['currentPhase']) => void;
-    setSelectedFlow: (flow: 'jd-draft' | 'cv-shortlist') => void;
-    setSelectedRequest: (requestId: string | undefined) => void;
-    setSelectedJob: (jobId: string | undefined) => void;
-    clearMessages: () => void;
-  };
-}
-
-const HiringContext = createContext<HiringContextType | undefined>(undefined);
+import { useCallback, useState } from 'react';
+import {
+  type HiringChatState,
+  HiringContext,
+  type HiringContextType,
+  type HiringMessage,
+} from './hiring-context';
 
 export function HiringProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<HiringChatState>({
@@ -126,12 +90,4 @@ export function HiringProvider({ children }: { children: React.ReactNode }) {
   };
 
   return <HiringContext.Provider value={value}>{children}</HiringContext.Provider>;
-}
-
-export function useHiringChat() {
-  const context = useContext(HiringContext);
-  if (!context) {
-    throw new Error('useHiringChat must be used within HiringProvider');
-  }
-  return context;
 }

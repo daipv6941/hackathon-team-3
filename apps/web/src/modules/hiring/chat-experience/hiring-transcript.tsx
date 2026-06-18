@@ -10,9 +10,9 @@ import {
   ThumbsUp,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useHiringChat } from './hiring-provider';
 import { HiringRequestSelector } from './hiring-request-selector';
 import { HiringSelection } from './hiring-selection';
+import { useHiringChat } from './use-hiring-chat';
 
 export function HiringTranscript() {
   const { state } = useHiringChat();
@@ -23,7 +23,6 @@ export function HiringTranscript() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (state.currentPhase === 'selection') {
