@@ -86,7 +86,7 @@ export function HiringRequestSelector() {
 
     actions.addMessage({
       role: 'assistant',
-      content: `📝 Perfect! I'll help you create a new hiring request.\n\nLet me ask you a few questions to set it up:\n\n**What is the position title you're hiring for?**\n(e.g., "Senior Backend Developer", "Product Manager", "Data Scientist")`,
+      content: `📝 Perfect! I'll help you create a new hiring request.\n\nPlease describe the hiring request in detail. Tell me about:\n- The position and team\n- Why you're hiring\n- Key responsibilities and deliverables\n- Team skill gaps\n- Seniority level\n- Salary range\n- Headcount and urgency\n\nThe more details you provide, the better I can extract the information!\n\n**Go ahead, describe your hiring need:**`,
       type: 'action',
     });
 

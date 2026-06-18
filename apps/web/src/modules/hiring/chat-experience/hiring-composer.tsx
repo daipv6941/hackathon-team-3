@@ -5,29 +5,19 @@ import { Send } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useHiringChat } from './use-hiring-chat';
 
-const FORM_FIELDS = [
-  'position_title',
-  'team_name',
-  'seniority_level',
-  'headcount',
-  'salary_range',
-  'team_skill_gap_summary',
-  'key_deliverables',
-  'business_justification',
-] as const;
-
-type FormField = (typeof FORM_FIELDS)[number];
-type NewRequestData = Record<FormField, string>;
+type NewRequestData = Record<string, string>;
 
 export function HiringComposer() {
   const { state, actions } = useHiringChat();
   const [input, setInput] = useState('');
-  const [newRequestData, setNewRequestData] = useState<Partial<NewRequestData>>({});
-  const [currentFieldIndex, setCurrentFieldIndex] = useState(0);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [isLoadingExistingThread, setIsLoadingExistingThread] = useState(false);
   const triggeredThreadsRef = useRef<Set<string>>(new Set());
   const prevPhaseRef = useRef<string | null>(null);
+  const [extractionPhase, setExtractionPhase] = useState<
+    'initial-prompt' | 'extracting' | 'collected-summary' | 'completed'
+  >('initial-prompt');
+  const [extractedData, setExtractedData] = useState<Record<string, unknown>>({});
 
   const triggerInitialPhaseWorkflow = useCallback(
     async (tid: string, requestData?: Partial<NewRequestData>) => {
@@ -205,67 +195,206 @@ export function HiringComposer() {
       // Only trigger if we just created a new thread (not loading existing one) and haven't already
       console.log('🚀 Triggering workflow for thread:', threadId);
       triggeredThreadsRef.current.add(threadId);
-      triggerInitialPhaseWorkflow(threadId, newRequestData);
+      triggerInitialPhaseWorkflow(threadId, extractedData as Record<string, string>);
     }
   }, [
     threadId,
     isLoadingExistingThread,
     state.currentPhase,
-    newRequestData,
+    extractedData,
     triggerInitialPhaseWorkflow,
   ]);
 
-  const handleCreateRequestFlow = (userInput: string) => {
-    const currentField = FORM_FIELDS[currentFieldIndex];
-    if (!currentField) return;
+  const handleCreateRequestFlow = async (userInput: string) => {
+    // Phase 1: Initial description submission and extraction
+    if (extractionPhase === 'initial-prompt') {
+      try {
+        setExtractionPhase('extracting');
+        console.log('🔍 Extracting hiring request details...');
 
-    // Store the answer
-    const updated = { ...newRequestData, [currentField]: userInput };
-    setNewRequestData(updated);
+        const response = await fetch('http://localhost:3000/hiring/v1/requests/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ description: userInput }),
+        });
 
-    // Show next question or finish
-    if (currentFieldIndex < FORM_FIELDS.length - 1) {
-      const nextField = FORM_FIELDS[currentFieldIndex + 1];
-      const fieldLabels: Record<FormField, string> = {
-        position_title: 'What is the position title?',
-        team_name: 'Which team is this for?',
-        seniority_level: 'What seniority level? (Junior/Mid/Senior)',
-        headcount: 'How many positions to fill?',
-        salary_range: 'What is the salary range? (e.g., $1500-$2500)',
-        team_skill_gap_summary: 'What are the team skill gaps?',
-        key_deliverables: 'What are the key deliverables for this role?',
-        business_justification: 'What is the business justification for this hire?',
-      };
+        if (!response.ok) {
+          throw new Error('Failed to extract details');
+        }
 
-      const nextLabel = nextField ? fieldLabels[nextField] : 'Next step...';
+        const data = (await response.json()) as { extracted: Record<string, unknown> };
+        setExtractedData(data.extracted);
+
+        const extracted = data.extracted as Record<string, unknown> & { missing_fields?: string[] };
+        const missingFields = extracted.missing_fields || [];
+
+        if (missingFields.length === 0) {
+          // All fields extracted successfully
+          setExtractionPhase('collected-summary');
+          showExtractedSummary(extracted);
+        } else {
+          // Ask for missing fields
+          setExtractionPhase('collected-summary');
+          showMissingFieldsPrompt(missingFields);
+        }
+      } catch (error) {
+        console.error('Extraction error:', error);
+        actions.addMessage({
+          role: 'assistant',
+          content: '❌ Failed to extract hiring details. Please try again.',
+          type: 'text',
+        });
+        setExtractionPhase('initial-prompt');
+      }
+      actions.setLoading(false);
+      return;
+    }
+
+    // Phase 2: Collecting missing fields
+    if (extractionPhase === 'collected-summary') {
+      // User answered questions about missing fields - update extracted data
+      const missingField = (
+        extractedData as Record<string, unknown> & { missing_fields?: string[] }
+      ).missing_fields?.[0];
+      if (missingField) {
+        setExtractedData({
+          ...extractedData,
+          [missingField]: userInput,
+          missing_fields: (
+            extractedData as Record<string, unknown> & { missing_fields?: string[] }
+          ).missing_fields?.slice(1),
+        });
+
+        const updated = {
+          ...extractedData,
+          [missingField]: userInput,
+          missing_fields: (
+            extractedData as Record<string, unknown> & { missing_fields?: string[] }
+          ).missing_fields?.slice(1),
+        };
+
+        const remainingMissing = (
+          updated as Record<string, unknown> & { missing_fields?: string[] }
+        ).missing_fields;
+        if (remainingMissing && remainingMissing.length > 0) {
+          // More fields to ask
+          showMissingFieldsPrompt(remainingMissing);
+        } else {
+          // All fields collected - show summary
+          showExtractedSummary(updated);
+        }
+      }
+      actions.setLoading(false);
+      return;
+    }
+  };
+
+  const showMissingFieldsPrompt = (missingFields: string[]) => {
+    const nextField = missingFields[0];
+    if (!nextField) return;
+
+    const fieldLabels: Record<string, string> = {
+      position_title: 'What is the position title?',
+      team_name: 'Which team is this for?',
+      seniority_level: 'What seniority level? (Junior/Mid/Senior)',
+      headcount_requested: 'How many positions to fill?',
+      salary_range: 'What is the salary range? (e.g., $1500-$2500)',
+      team_skill_gap_summary: 'What are the team skill gaps?',
+      key_deliverables: 'What are the key deliverables for this role?',
+      business_justification: 'What is the business justification for this hire?',
+    };
+
+    const label = fieldLabels[nextField] || `Tell me about ${nextField}:`;
+
+    actions.addMessage({
+      role: 'assistant',
+      content: `I need a bit more information to complete your hiring request.\n\n**${label}**`,
+      type: 'action',
+    });
+  };
+
+  const showExtractedSummary = (data: Record<string, unknown>) => {
+    const summary = `
+📋 **Hiring Request Summary**
+
+**Position:** ${String(data.position_title) || 'TBD'}
+**Team:** ${String(data.team_name) || 'TBD'}
+**Headcount:** ${data.headcount_requested || 1}
+**Seniority Level:** ${data.seniority_level || 'TBD'}
+**Urgency:** ${data.urgency_level || 'Medium'}
+**Salary Range:** ${data.salary_range || 'TBD'}
+
+**Key Deliverables:**
+${data.key_deliverables || 'TBD'}
+
+**Business Justification:**
+${data.business_justification || 'TBD'}
+
+**Team Skill Gaps:**
+${data.team_skill_gap_summary || 'TBD'}
+
+Is everything correct? Reply with **confirm** to save or **change** to modify any details.
+    `.trim();
+
+    actions.addMessage({
+      role: 'assistant',
+      content: summary,
+      type: 'action',
+    });
+
+    setExtractionPhase('completed');
+  };
+
+  const saveHiringRequest = async (data: Record<string, unknown>) => {
+    try {
+      console.log('💾 Saving hiring request...');
+      const response = await fetch('http://localhost:3000/hiring/v1/requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          position_title: data.position_title,
+          team_name: data.team_name,
+          urgency_level: data.urgency_level,
+          headcount_requested: data.headcount_requested,
+          business_justification: data.business_justification,
+          team_skill_gap_summary: data.team_skill_gap_summary,
+          key_deliverables: data.key_deliverables,
+          salary_range: data.salary_range,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save hiring request');
+      }
+
+      const result = (await response.json()) as { requestId?: string };
+      const requestId = result.requestId;
+
+      console.log(`✅ Hiring request ${requestId} saved successfully`);
 
       actions.addMessage({
         role: 'assistant',
-        content: `✅ Got it: ${userInput}\n\n**${nextLabel}**`,
+        content: `✅ Perfect! I've saved your hiring request **${requestId}**.\n\nWould you like me to start creating the job description now?`,
         type: 'action',
       });
 
-      setCurrentFieldIndex(currentFieldIndex + 1);
-    } else {
-      // All fields collected - create request
-      const newRequestId = `REQ-${String(Math.random()).slice(2, 6)}`;
-      const positionTitle = updated.position_title || 'New Position';
-      const teamName = updated.team_name || 'Engineering';
-      const seniority = updated.seniority_level || 'Mid';
-      const headcount = updated.headcount || '1';
-      const salary = updated.salary_range || 'Competitive';
+      // Set the new request as selected
+      if (requestId) {
+        actions.setSelectedRequest(requestId);
+      }
 
+      // Reset extraction state
+      setExtractionPhase('initial-prompt');
+      setExtractedData({});
+    } catch (error) {
+      console.error('❌ Save error:', error);
       actions.addMessage({
         role: 'assistant',
-        content: `✅ Perfect! I've created **${newRequestId}** with all the details.\n\n📋 **${positionTitle}** for **${teamName}**\n- Seniority: ${seniority}\n- Headcount: ${headcount}\n- Salary: ${salary}\n\nNow let me fetch business context and start the JD creation process...`,
-        type: 'action',
+        content: '❌ Failed to save the hiring request. Please try again.',
+        type: 'text',
       });
-
-      // Set the new request as selected and proceed
-      actions.setSelectedRequest(newRequestId);
-      setCurrentFieldIndex(0);
-      setNewRequestData({});
-      actions.setPhase('initial');
     }
 
     actions.setLoading(false);
@@ -288,8 +417,30 @@ export function HiringComposer() {
     try {
       // Check if user is creating a new hiring request
       if (state.selectedRequestId === 'creating') {
+        // Handle confirmation of extracted data
+        if (extractionPhase === 'completed') {
+          const userResponse = userInput.toLowerCase().trim();
+          if (userResponse.includes('confirm') || userResponse === 'yes') {
+            // Save to database
+            await saveHiringRequest(extractedData as Record<string, unknown>);
+            return;
+          } else if (userResponse.includes('change') || userResponse === 'no') {
+            // Reset and ask user to describe again
+            setExtractionPhase('initial-prompt');
+            setExtractedData({});
+            actions.addMessage({
+              role: 'assistant',
+              content:
+                "No problem! Please describe your hiring request again, and I'll extract the details.",
+              type: 'action',
+            });
+            actions.setLoading(false);
+            return;
+          }
+        }
+
         // Handle conversational form for new request creation
-        handleCreateRequestFlow(userInput);
+        await handleCreateRequestFlow(userInput);
         return;
       }
 

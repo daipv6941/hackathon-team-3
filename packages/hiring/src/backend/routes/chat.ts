@@ -6,7 +6,7 @@ import { stream } from 'hono/streaming';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import * as schema from '../db/index.ts';
-import { draftJd, fetchContext, scoreJd } from '../orchestration.ts';
+import { draftJd, extractRequestDetails, fetchContext, scoreJd } from '../orchestration.ts';
 
 export interface HiringRouteDeps {
   mastra: Mastra;
@@ -1202,6 +1202,103 @@ ${
     } catch (error) {
       console.error('Delete candidate error:', error);
       return c.json({ error: 'Failed to delete candidate' }, 500);
+    }
+  });
+
+  /**
+   * POST /v1/requests/extract
+   * Extract hiring request details from user description
+   */
+  app.post('/v1/requests/extract', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { description } = body as Record<string, unknown>;
+
+      if (!description || typeof description !== 'string') {
+        return c.json({ error: 'Description is required' }, 400);
+      }
+
+      console.log('📝 Extracting hiring request details from description...');
+      const extracted = await extractRequestDetails({ description });
+
+      console.log('✅ Extraction complete:', extracted);
+
+      return c.json({
+        success: true,
+        extracted,
+      });
+    } catch (error) {
+      console.error('❌ Extraction error:', error);
+      return c.json({ error: 'Failed to extract hiring request details' }, 500);
+    }
+  });
+
+  /**
+   * POST /v1/requests
+   * Create a new hiring request
+   */
+  app.post('/v1/requests', async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        position_title,
+        team_name,
+        urgency_level,
+        headcount_requested,
+        business_justification,
+        team_skill_gap_summary,
+        key_deliverables,
+        requesting_manager,
+      } = body as Record<string, unknown>;
+
+      // Validate required fields
+      if (!position_title || !team_name || !key_deliverables) {
+        return c.json(
+          { error: 'position_title, team_name, and key_deliverables are required' },
+          400,
+        );
+      }
+
+      const session = c.get('session') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
+
+      const db = getDb();
+
+      // Generate unique request ID
+      const timestamp = Date.now().toString().slice(-6);
+      const requestId = `REQ-${timestamp}`;
+
+      console.log(`💾 Creating hiring request ${requestId}...`);
+
+      // Insert into database
+      await db.insert(schema.hiringRequests).values({
+        tenant_id: session.tenant_id as string,
+        request_id: requestId,
+        position_title: String(position_title),
+        team_name: String(team_name),
+        urgency_level: String(urgency_level || 'Medium'),
+        headcount_requested: Number(headcount_requested) || 1,
+        business_justification: String(business_justification || ''),
+        team_skill_gap_summary: String(team_skill_gap_summary || ''),
+        key_deliverables: String(key_deliverables),
+        requesting_manager: String(requesting_manager || ''),
+        hr_owner: session.user_id as string,
+        approval_status: 'Pending',
+        request_status: 'Not Started',
+      });
+
+      console.log(`✅ Hiring request ${requestId} created successfully`);
+
+      return c.json({
+        success: true,
+        message: `Hiring request ${requestId} created`,
+        requestId,
+      });
+    } catch (error) {
+      console.error('❌ Create request error:', error);
+      return c.json({ error: 'Failed to create hiring request' }, 500);
     }
   });
 }

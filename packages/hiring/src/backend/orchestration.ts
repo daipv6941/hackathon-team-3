@@ -662,3 +662,86 @@ export async function startSlaTracker(input: z.infer<typeof StartSlaTrackerInput
     deadline: deadline.toISOString(),
   };
 }
+
+/**
+ * Extract hiring request details from user description using LLM
+ */
+export const ExtractRequestInputSchema = z.object({
+  description: z.string(),
+});
+
+export interface ExtractedRequestDetails {
+  position_title?: string;
+  team_name?: string;
+  urgency_level?: string;
+  headcount_requested?: number;
+  business_justification?: string;
+  team_skill_gap_summary?: string;
+  key_deliverables?: string;
+  salary_range?: string;
+  seniority_level?: string;
+  missing_fields: string[];
+}
+
+export async function extractRequestDetails(
+  input: z.infer<typeof ExtractRequestInputSchema>,
+): Promise<ExtractedRequestDetails> {
+  console.log('extractRequestDetails: Processing user description');
+
+  const model = openai('gpt-4-turbo');
+
+  const prompt = `You are an expert HR recruiter. Extract hiring request information from the following description.
+
+USER DESCRIPTION:
+${input.description}
+
+Extract the following information if present. Return a JSON object with these fields (use null for missing fields):
+{
+  "position_title": "The job position/title",
+  "team_name": "The team or department",
+  "urgency_level": "One of: Immediate, High, Medium, Low (default: Medium)",
+  "headcount_requested": "Number of positions (default: 1)",
+  "business_justification": "Why this hire is needed",
+  "team_skill_gap_summary": "What skills the team is missing",
+  "key_deliverables": "Key responsibilities and deliverables",
+  "salary_range": "Expected salary range",
+  "seniority_level": "One of: Junior, Mid, Senior"
+}
+
+Return ONLY the JSON object, no other text.`;
+
+  const result = await generateText({
+    model,
+    prompt,
+    temperature: 0.3,
+  });
+
+  let extracted: Partial<ExtractedRequestDetails> = {};
+  try {
+    const parsed = JSON.parse(result.text);
+    extracted = {
+      position_title: parsed.position_title || undefined,
+      team_name: parsed.team_name || undefined,
+      urgency_level: parsed.urgency_level || undefined,
+      headcount_requested: parsed.headcount_requested || undefined,
+      business_justification: parsed.business_justification || undefined,
+      team_skill_gap_summary: parsed.team_skill_gap_summary || undefined,
+      key_deliverables: parsed.key_deliverables || undefined,
+      salary_range: parsed.salary_range || undefined,
+      seniority_level: parsed.seniority_level || undefined,
+    };
+  } catch (e) {
+    console.error('Failed to parse LLM response:', e);
+  }
+
+  // Identify missing required fields
+  const required = ['position_title', 'team_name', 'key_deliverables'];
+  const missing_fields = required.filter(
+    (field) => !extracted[field as keyof ExtractedRequestDetails],
+  );
+
+  return {
+    ...extracted,
+    missing_fields,
+  };
+}
