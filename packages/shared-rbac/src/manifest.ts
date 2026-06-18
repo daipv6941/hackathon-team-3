@@ -8,10 +8,10 @@ export interface ModuleRbacManifest {
 
 export function canonicalKeys(statement: Statement): string[] {
   const keys: string[] = [];
-  for (const [resource, actions] of Object.entries(statement)) {
+  for (const [resource, actions] of Object.entries(statement).sort()) {
     for (const action of actions) keys.push(`${resource}.${action}`);
   }
-  return keys;
+  return keys.sort();
 }
 
 export function toManifest(
