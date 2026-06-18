@@ -1,8 +1,8 @@
 'use client';
 
-import { Card } from '@seta/shared-ui';
+import { Button, Card } from '@seta/shared-ui';
 import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router';
-import { AlertCircle, ArrowLeft, CheckCircle2, Clock, Edit2, Zap } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, Clock, Edit2, RotateCw, Zap } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 export const Route = createFileRoute('/_authed/hiring/requests/$requestId')({
@@ -21,6 +21,8 @@ interface HiringRequest {
   businessJustification?: string;
   teamSkillGap?: string;
   keyDeliverables?: string;
+  jdId?: string;
+  shortlistResults?: any;
 }
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -76,6 +78,45 @@ function RequestDetailPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [jd, setJd] = useState<any>(null);
+  const [shortlistResults, setShortlistResults] = useState<any>(null);
+
+  const loadJd = useCallback(async (jdId: string) => {
+    try {
+      if (!jdId) {
+        console.warn('No jdId provided');
+        return;
+      }
+
+      const response = await fetch(`http://localhost:3000/hiring/v1/jd/${jdId}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const jdData = await response.json();
+        setJd(jdData);
+      }
+    } catch (error) {
+      console.error('Load JD error:', error);
+    }
+  }, []);
+
+  const loadShortlistResults = useCallback(async (rId: string) => {
+    try {
+      const response = await fetch(`http://localhost:3000/hiring/v1/shortlist/results/${rId}`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setShortlistResults(data);
+      }
+    } catch (error) {
+      console.error('Load shortlist results error:', error);
+    }
+  }, []);
 
   const loadRequest = useCallback(async () => {
     try {
@@ -94,6 +135,19 @@ function RequestDetailPage() {
       if (found) {
         setRequest(found);
         setSelectedStatus(found.requestStatus);
+        // Load JD if approved and jdId exists
+        if (
+          found.jdId &&
+          (found.requestStatus === 'JD Approved' ||
+            found.requestStatus === 'CV Screening' ||
+            found.requestStatus === 'Shortlist Ready')
+        ) {
+          loadJd(found.jdId);
+        }
+        // Load shortlist results if screening or ready
+        if (found.requestStatus === 'CV Screening' || found.requestStatus === 'Shortlist Ready') {
+          loadShortlistResults(found.requestId);
+        }
       } else {
         console.warn('Request not found:', requestId);
       }
@@ -102,7 +156,7 @@ function RequestDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [requestId]);
+  }, [requestId, loadJd, loadShortlistResults]);
 
   useEffect(() => {
     loadRequest();
@@ -191,6 +245,16 @@ function RequestDetailPage() {
             <h1 className="text-3xl font-bold">{request.positionTitle}</h1>
             <p className="mt-2 text-sm text-ink-subtle">{request.requestId}</p>
           </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => loadRequest()}
+            disabled={isLoading}
+            className="gap-2"
+          >
+            <RotateCw className="h-4 w-4" />
+            {isLoading ? 'Refreshing...' : 'Refresh'}
+          </Button>
         </div>
       </div>
 
@@ -268,6 +332,229 @@ function RequestDetailPage() {
               </div>
             </div>
           </Card>
+
+          {jd && (
+            <Card className="p-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Approved Job Description</h2>
+                  <p className="text-xs text-ink-subtle mt-1">ID: {jd.jdId}</p>
+                </div>
+                {jd.agentClarityScore && (
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-primary">
+                      {Math.round(jd.agentClarityScore)}
+                    </div>
+                    <p className="text-xs text-ink-subtle">Clarity Score</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 space-y-4">
+                {jd.position && (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">Position</label>
+                    <p className="mt-1 text-sm font-medium">{jd.position}</p>
+                  </div>
+                )}
+                {jd.seniorityLevel && (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">Seniority Level</label>
+                    <p className="mt-1 text-sm">{jd.seniorityLevel}</p>
+                  </div>
+                )}
+                {jd.minYoe !== null || jd.maxYoe !== null ? (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">
+                      Years of Experience
+                    </label>
+                    <p className="mt-1 text-sm">
+                      {jd.minYoe && jd.maxYoe
+                        ? `${jd.minYoe} - ${jd.maxYoe} years`
+                        : jd.minYoe
+                          ? `${jd.minYoe}+ years`
+                          : jd.maxYoe
+                            ? `Up to ${jd.maxYoe} years`
+                            : 'Not specified'}
+                    </p>
+                  </div>
+                ) : null}
+                {jd.mustHaveSkills && (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">Must-Have Skills</label>
+                    <p className="mt-1 text-sm whitespace-pre-wrap">{jd.mustHaveSkills}</p>
+                  </div>
+                )}
+                {jd.niceToHaveSkills && (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">
+                      Nice-to-Have Skills
+                    </label>
+                    <p className="mt-1 text-sm whitespace-pre-wrap">{jd.niceToHaveSkills}</p>
+                  </div>
+                )}
+                {jd.englishLevelRequired && (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">
+                      English Level Required
+                    </label>
+                    <p className="mt-1 text-sm">{jd.englishLevelRequired}</p>
+                  </div>
+                )}
+                {jd.workMode && (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">Work Mode</label>
+                    <p className="mt-1 text-sm">{jd.workMode}</p>
+                  </div>
+                )}
+                {jd.salaryRange && (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">Salary Range</label>
+                    <p className="mt-1 text-sm">{jd.salaryRange}</p>
+                  </div>
+                )}
+                {jd.keyResponsibilities && (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">
+                      Key Responsibilities
+                    </label>
+                    <p className="mt-1 text-sm whitespace-pre-wrap">{jd.keyResponsibilities}</p>
+                  </div>
+                )}
+                {jd.jdFullText && (
+                  <div>
+                    <label className="text-sm font-medium text-ink-subtle">
+                      Full Job Description
+                    </label>
+                    <div className="mt-2 max-h-96 overflow-y-auto rounded border border-hairline bg-surface-1 p-4 text-sm leading-relaxed text-ink prose prose-sm max-w-none">
+                      <div className="whitespace-pre-wrap">{jd.jdFullText}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {shortlistResults && (
+            <Card className="p-6">
+              <h2 className="text-lg font-semibold">Shortlist Report</h2>
+
+              {shortlistResults.statistics && (
+                <div className="mt-4 grid grid-cols-3 gap-4">
+                  <div className="rounded-lg bg-green-50 p-3">
+                    <div className="text-sm font-medium text-green-700">Pass</div>
+                    <div className="mt-1 text-2xl font-bold text-green-900">
+                      {shortlistResults.statistics.passCandidates}
+                    </div>
+                    <div className="text-xs text-green-600">
+                      {shortlistResults.statistics.passPercentage}%
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-yellow-50 p-3">
+                    <div className="text-sm font-medium text-yellow-700">Need More Info</div>
+                    <div className="mt-1 text-2xl font-bold text-yellow-900">
+                      {shortlistResults.statistics.needMoreInfoCandidates}
+                    </div>
+                    <div className="text-xs text-yellow-600">
+                      {shortlistResults.statistics.needMoreInfoPercentage}%
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg bg-red-50 p-3">
+                    <div className="text-sm font-medium text-red-700">Reject</div>
+                    <div className="mt-1 text-2xl font-bold text-red-900">
+                      {shortlistResults.statistics.rejectCandidates}
+                    </div>
+                    <div className="text-xs text-red-600">
+                      {shortlistResults.statistics.rejectPercentage}%
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(shortlistResults.passCandidatesList || []).length > 0 && (
+                <div className="mt-6">
+                  <h3 className="font-semibold text-green-700">✅ Pass Candidates</h3>
+                  <div className="mt-3 space-y-3">
+                    {shortlistResults.passCandidatesList.map((c: any, idx: number) => (
+                      <div key={idx} className="rounded border border-green-200 bg-green-50 p-3">
+                        <div className="flex justify-between">
+                          <span className="font-medium">{c.candidateName}</span>
+                          <span className="text-sm font-bold text-green-700">{c.fitScore}/100</span>
+                        </div>
+                        <p className="mt-1 text-xs text-ink-subtle">{c.fitSummary}</p>
+                        {c.interviewQuestions && c.interviewQuestions.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-medium text-green-700">
+                              Interview Questions:
+                            </p>
+                            <ul className="mt-1 space-y-1">
+                              {c.interviewQuestions.slice(0, 3).map((q: string, i: number) => (
+                                <li key={i} className="text-xs text-ink">
+                                  • {q}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(shortlistResults.needMoreInfoList || []).length > 0 && (
+                <div className="mt-6">
+                  <h3 className="font-semibold text-yellow-700">⚠️ Need More Info</h3>
+                  <div className="mt-3 space-y-3">
+                    {shortlistResults.needMoreInfoList.map((c: any, idx: number) => (
+                      <div key={idx} className="rounded border border-yellow-200 bg-yellow-50 p-3">
+                        <div className="flex justify-between">
+                          <span className="font-medium">{c.candidateName}</span>
+                          <span className="text-sm font-bold text-yellow-700">
+                            {c.fitScore}/100
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-ink-subtle">{c.fitSummary}</p>
+                        {c.followUpQuestions && c.followUpQuestions.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-medium text-yellow-700">
+                              Follow-up Questions:
+                            </p>
+                            <ul className="mt-1 space-y-1">
+                              {c.followUpQuestions.slice(0, 3).map((q: string, i: number) => (
+                                <li key={i} className="text-xs text-ink">
+                                  • {q}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(shortlistResults.rejectCandidatesList || []).length > 0 && (
+                <div className="mt-6">
+                  <h3 className="font-semibold text-red-700">❌ Reject Candidates</h3>
+                  <div className="mt-3 space-y-2">
+                    {shortlistResults.rejectCandidatesList.map((c: any, idx: number) => (
+                      <div key={idx} className="rounded border border-red-200 bg-red-50 p-3">
+                        <div className="flex justify-between">
+                          <span className="font-medium text-red-900">{c.candidateName}</span>
+                          <span className="text-xs font-bold text-red-700">{c.fitScore}/100</span>
+                        </div>
+                        <p className="mt-1 text-xs text-red-700">{c.rejectReason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -313,6 +600,16 @@ function RequestDetailPage() {
                   done: ['CV Screening', 'Shortlist Ready', 'In Progress', 'Completed'].includes(
                     request.requestStatus,
                   ),
+                },
+                {
+                  status: 'Shortlist Ready',
+                  done: ['Shortlist Ready', 'In Progress', 'Completed'].includes(
+                    request.requestStatus,
+                  ),
+                },
+                {
+                  status: 'In Progress',
+                  done: ['In Progress', 'Completed'].includes(request.requestStatus),
                 },
                 { status: 'Completed', done: request.requestStatus === 'Completed' },
                 { status: 'Closed', done: request.requestStatus === 'Closed' },

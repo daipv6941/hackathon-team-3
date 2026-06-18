@@ -1,7 +1,14 @@
 'use client';
 
 import { Button } from '@seta/shared-ui';
-import { AlertCircle, CheckCircle2, MessageCircle, ThumbsDown, ThumbsUp } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  MessageCircle,
+  Search,
+  ThumbsDown,
+  ThumbsUp,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useHiringChat } from './hiring-provider';
 import { HiringRequestSelector } from './hiring-request-selector';
@@ -86,9 +93,9 @@ function MessageBubble({
       });
 
       // Extract JD content and clarity score from the message
-      const jdContent = message.content;
+      const jdContent = message.content || '';
       const clarityMatch = jdContent.match(/Clarity Score:.*?(\d+)\/100/);
-      const clarityScore = clarityMatch ? parseInt(clarityMatch[1], 10) : 0;
+      const clarityScore = clarityMatch?.[1] ? parseInt(clarityMatch[1], 10) : 0;
 
       console.log('📤 Approving JD for request:', {
         requestId: state.selectedRequestId,
@@ -119,6 +126,9 @@ function MessageBubble({
       const data = await response.json();
       console.log('✅ JD approved successfully:', data);
 
+      // Save jdId to state for screening
+      actions.setSelectedJob(data.jdId);
+
       // Add confirmation message
       actions.addMessage({
         role: 'assistant',
@@ -145,6 +155,113 @@ Ready to screen candidates?`,
         content: '❌ Failed to approve JD. Please try again.',
         type: 'text',
       });
+    }
+  };
+
+  const handleScreenAndShortlist = async () => {
+    try {
+      actions.setLoading(true);
+      console.log('📊 Starting batch screening for request:', state.selectedRequestId);
+
+      if (!state.selectedJobId) {
+        throw new Error('No JD selected. Please approve a JD first.');
+      }
+
+      const response = await fetch('http://localhost:3000/hiring/v1/shortlist/screen-and-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          requestId: state.selectedRequestId,
+          jdId: state.selectedJobId, // Use approved JD ID
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to screen candidates');
+
+      const result = await response.json();
+      console.log('✅ Screening complete:', result);
+
+      // Build detailed report with statistics
+      const stats = result.statistics || {};
+      const reportHtml = `
+## 📊 Shortlist Report
+
+**Position:** ${result.position}
+**Total Candidates:** ${stats.totalCandidates || result.totalCandidates}
+
+### 📈 Summary by Recommendation
+
+- **✅ PASS (${stats.passPercentage || 0}%)**: ${stats.passCandidates || 0} candidates
+- **⚠️ NEED MORE INFO (${stats.needMoreInfoPercentage || 0}%)**: ${stats.needMoreInfoCandidates || 0} candidates
+- **❌ REJECT (${stats.rejectPercentage || 0}%)**: ${stats.rejectCandidates || 0} candidates
+
+${
+  (result.passCandidatesList || []).length > 0
+    ? `### ✅ PASS Candidates (Ready for Interview)
+
+${(result.passCandidatesList || [])
+  .map(
+    (c: any) => `
+**${c.candidateName}** - Score: ${c.fitScore}/100
+- Summary: ${c.fitSummary}
+- Interview Questions:
+${(c.interviewQuestions || []).map((q: string) => `  - ${q}`).join('\n')}
+`,
+  )
+  .join('\n')}
+`
+    : ''
+}
+
+${
+  (result.needMoreInfoList || []).length > 0
+    ? `### ⚠️ NEED MORE INFO Candidates (Requires Follow-up)
+
+${(result.needMoreInfoList || [])
+  .map(
+    (c: any) => `
+**${c.candidateName}** - Score: ${c.fitScore}/100
+- Summary: ${c.fitSummary}
+- Follow-up Questions:
+${(c.followUpQuestions || []).map((q: string) => `  - ${q}`).join('\n')}
+`,
+  )
+  .join('\n')}
+`
+    : ''
+}
+
+${
+  (result.rejectCandidatesList || []).length > 0
+    ? `### ❌ REJECT Candidates
+
+${(result.rejectCandidatesList || [])
+  .map((c: any) => `- **${c.candidateName}** (${c.fitScore}/100): ${c.rejectReason}`)
+  .join('\n')}
+`
+    : ''
+}
+
+${result.summary}`;
+
+      actions.addMessage({
+        role: 'assistant',
+        content: reportHtml,
+        type: 'action',
+      });
+
+      actions.setPhase('confirmation');
+      setShowActions(false);
+    } catch (error) {
+      console.error('Screen and shortlist error:', error);
+      actions.addMessage({
+        role: 'assistant',
+        content: '❌ Failed to screen candidates. Please try again.',
+        type: 'text',
+      });
+    } finally {
+      actions.setLoading(false);
     }
   };
 
@@ -274,15 +391,93 @@ Would you like me to revise any section or approve this JD now?`,
                 </div>
               )}
 
+            {/* Shortlist action - show after JD approved */}
+            {state.currentPhase === 'jd-approval' &&
+              message.content.includes('JD Approved & Saved') && (
+                <div className="mt-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="default"
+                    onClick={handleScreenAndShortlist}
+                    disabled={state.isLoading}
+                    className="gap-1"
+                  >
+                    <Search className="h-3 w-3" />
+                    {state.isLoading ? 'Screening...' : 'Screen & Shortlist Candidates'}
+                  </Button>
+                </div>
+              )}
+
             {/* Shortlist confirmation buttons */}
-            {state.currentPhase === 'confirmation' && (
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="default" onClick={handleApprove} className="gap-1">
-                  <ThumbsUp className="h-3 w-3" />
-                  Confirm Shortlist
-                </Button>
-              </div>
-            )}
+            {state.currentPhase === 'confirmation' &&
+              message.content.includes('Shortlist Report') && (
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={async () => {
+                      try {
+                        console.log(
+                          '🔵 Confirm button clicked for request:',
+                          state.selectedRequestId,
+                        );
+
+                        actions.addMessage({
+                          role: 'user',
+                          content: '✅ Approved - finalizing shortlist',
+                          type: 'text',
+                        });
+
+                        console.log('📤 Calling /v1/shortlist/confirm...');
+                        const response = await fetch(
+                          'http://localhost:3000/hiring/v1/shortlist/confirm',
+                          {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({
+                              requestId: state.selectedRequestId,
+                              selectedCandidateIds: [],
+                            }),
+                          },
+                        );
+
+                        console.log('📥 Response status:', response.status, response.statusText);
+
+                        if (!response.ok) {
+                          const errorText = await response.text();
+                          console.error('❌ API error response:', errorText);
+                          throw new Error(`Failed to confirm shortlist: ${response.statusText}`);
+                        }
+
+                        const data = await response.json();
+                        console.log('✅ Confirm response:', data);
+
+                        actions.addMessage({
+                          role: 'assistant',
+                          content: `✅ **Shortlist Confirmed!**\n\nRequest status updated to **${data.requestStatus}**.`,
+                          type: 'action',
+                        });
+
+                        actions.setPhase('complete');
+                        setShowActions(false);
+                      } catch (error) {
+                        console.error('Confirm error:', error);
+                        actions.addMessage({
+                          role: 'assistant',
+                          content: `❌ Failed to confirm: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                          type: 'text',
+                        });
+                      }
+                    }}
+                    className="gap-1"
+                  >
+                    <ThumbsUp className="h-3 w-3" />
+                    Confirm Shortlist
+                  </Button>
+                </div>
+              )}
           </>
         )}
 

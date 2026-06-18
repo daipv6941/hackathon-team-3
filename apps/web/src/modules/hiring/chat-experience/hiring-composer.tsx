@@ -2,7 +2,7 @@
 
 import { Button, Input } from '@seta/shared-ui';
 import { Send } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useHiringChat } from './hiring-provider';
 
 const FORM_FIELDS = [
@@ -26,6 +26,7 @@ export function HiringComposer() {
   const [currentFieldIndex, setCurrentFieldIndex] = useState(0);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [isLoadingExistingThread, setIsLoadingExistingThread] = useState(false);
+  const triggeredThreadsRef = useRef<Set<string>>(new Set());
 
   const triggerInitialPhaseWorkflow = useCallback(
     async (tid: string, requestData?: Partial<NewRequestData>) => {
@@ -186,22 +187,34 @@ export function HiringComposer() {
 
   // Auto-trigger API call ONLY after CREATING a new thread (not loading existing)
   useEffect(() => {
-    if (threadId && !isLoadingExistingThread) {
-      // Only trigger if we just created a new thread (not loading existing one)
+    if (
+      threadId &&
+      !isLoadingExistingThread &&
+      state.currentPhase === 'initial' &&
+      !triggeredThreadsRef.current.has(threadId)
+    ) {
+      // Only trigger if we just created a new thread (not loading existing one) and haven't already
       console.log('🚀 Triggering workflow for thread:', threadId);
+      triggeredThreadsRef.current.add(threadId);
       triggerInitialPhaseWorkflow(threadId, newRequestData);
     }
-  }, [threadId, isLoadingExistingThread, triggerInitialPhaseWorkflow, newRequestData]);
+  }, [
+    threadId,
+    isLoadingExistingThread,
+    state.currentPhase,
+    newRequestData,
+    triggerInitialPhaseWorkflow,
+  ]);
 
   // Check if we're loading an existing thread (from sidebar click)
   useEffect(() => {
     const savedThreadId = localStorage.getItem('currentThreadId');
-    if (savedThreadId && savedThreadId !== threadId) {
+    if (savedThreadId && savedThreadId !== threadId && !isLoadingExistingThread) {
       // We're loading an existing thread from sidebar
       setIsLoadingExistingThread(true);
       setThreadId(savedThreadId);
     }
-  }, [threadId]);
+  }, [threadId, isLoadingExistingThread]);
 
   const handleCreateRequestFlow = (userInput: string) => {
     const currentField = FORM_FIELDS[currentFieldIndex];

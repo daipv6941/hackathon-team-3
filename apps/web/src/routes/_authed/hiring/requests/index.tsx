@@ -101,9 +101,18 @@ function RequestsPage() {
             View and manage all hiring requests for your team
           </p>
         </div>
-        <Button variant="primary" size="md">
-          New Request
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => navigate({ to: '/hiring/candidates' })}
+          >
+            Candidates Pool
+          </Button>
+          <Button variant="primary" size="sm">
+            New Request
+          </Button>
+        </div>
       </div>
 
       {/* Status Summary */}

@@ -99,7 +99,7 @@ export function ThreadList() {
 
       // Load thread data
       actions.setSelectedRequest(thread.request_id);
-      actions.setPhase(thread.current_phase);
+      actions.setPhase(thread.current_phase as any);
 
       // Load messages
       interface MessageData {
