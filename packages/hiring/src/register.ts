@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ContributionRegistry } from '@seta/core';
+import type { ContributionRegistry, RouteBuildDeps } from '@seta/core';
 import { HIRING_AGENT_TOOLS } from './agent-tools.ts';
 import * as schema from './backend/db/index.ts';
 import { buildHiringRoutes } from './backend/http/index.ts';
@@ -19,7 +19,7 @@ export function registerHiringContributions(reg: ContributionRegistry): void {
     agentTools: HIRING_AGENT_TOOLS,
     routes: {
       mountAt: '/hiring',
-      build: (deps: any) => {
+      build: (deps: RouteBuildDeps) => {
         // Initialize Mastra runtime
         const mastra = buildMastra({
           pool: deps.pool,
@@ -28,6 +28,7 @@ export function registerHiringContributions(reg: ContributionRegistry): void {
 
         // Build and mount Mastra-powered chat routes
         const app = buildHiringRoutes();
+        // biome-ignore lint/suspicious/noExplicitAny: Hono's env generics are invariant; we cast to ensure type compatibility
         mountHiringChatRoutes(app as any, { mastra, pool: deps.pool });
 
         return app;

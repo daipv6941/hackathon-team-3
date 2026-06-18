@@ -979,7 +979,7 @@ ${
       const db = getDb();
       const status = c.req.query('status'); // active, inactive, or undefined for all
 
-      let candidates;
+      let candidates: Record<string, unknown>[];
       if (status && ['active', 'inactive'].includes(status)) {
         candidates = await db
           .select()
