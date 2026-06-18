@@ -228,7 +228,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         seniority_level: 'Senior',
         agent_jd_draft_text: jdText,
         jd_full_text: jdText,
-        agent_clarity_score: typeof clarityScore === 'number' ? clarityScore : 0,
+        agent_clarity_score: String(typeof clarityScore === 'number' ? clarityScore : 0),
         status: 'Ready',
       });
 
@@ -444,17 +444,17 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         cv_id: cvId,
         candidate_id: candidate.candidate_id,
         candidate_name: candidate.full_name,
-        fit_score: scoreResult.fitScore as unknown as number,
-        recommendation: scoreResult.recommendation as unknown as string,
-        confidence: scoreResult.confidence,
-        fit_summary: scoreResult.fitSummary,
-        gap_summary: scoreResult.gapSummary,
+        fit_score: String(scoreResult.fitScore),
+        recommendation: String(scoreResult.recommendation),
+        confidence: scoreResult.confidence as unknown as string,
+        fit_summary: scoreResult.fitSummary as unknown as string,
+        gap_summary: scoreResult.gapSummary as unknown as string,
         category_scores: scoreResult.categoryScores as unknown as Record<string, unknown>,
         matched_evidence: scoreResult.matchedEvidence as unknown as Record<string, unknown>,
         flags: scoreResult.flags as unknown as Record<string, unknown>,
-        interview_questions: scoreResult.interviewQuestions as unknown as string[],
-        follow_up_questions: scoreResult.followUpQuestions as unknown as string[],
-        reject_reason: scoreResult.rejectReason,
+        interview_questions: scoreResult.interviewQuestions as unknown as Record<string, unknown>,
+        follow_up_questions: scoreResult.followUpQuestions as unknown as Record<string, unknown>,
+        reject_reason: scoreResult.rejectReason as unknown as string,
       });
 
       return c.json({
@@ -542,17 +542,23 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
             cv_id: candidate.cv_id,
             candidate_id: candidate.candidate_id,
             candidate_name: candidate.full_name,
-            fit_score: scoreResult.fitScore as unknown as number,
-            recommendation: scoreResult.recommendation as unknown as string,
-            confidence: scoreResult.confidence,
-            fit_summary: scoreResult.fitSummary,
-            gap_summary: scoreResult.gapSummary,
+            fit_score: String(scoreResult.fitScore),
+            recommendation: String(scoreResult.recommendation),
+            confidence: scoreResult.confidence as unknown as string,
+            fit_summary: scoreResult.fitSummary as unknown as string,
+            gap_summary: scoreResult.gapSummary as unknown as string,
             category_scores: scoreResult.categoryScores as unknown as Record<string, unknown>,
             matched_evidence: scoreResult.matchedEvidence as unknown as Record<string, unknown>,
             flags: scoreResult.flags as unknown as Record<string, unknown>,
-            interview_questions: scoreResult.interviewQuestions as unknown as string[],
-            follow_up_questions: scoreResult.followUpQuestions as unknown as string[],
-            reject_reason: scoreResult.rejectReason,
+            interview_questions: scoreResult.interviewQuestions as unknown as Record<
+              string,
+              unknown
+            >,
+            follow_up_questions: scoreResult.followUpQuestions as unknown as Record<
+              string,
+              unknown
+            >,
+            reject_reason: scoreResult.rejectReason as unknown as string,
           });
 
           scoredCandidates.push({
@@ -680,13 +686,12 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       console.log('✅ Request status updated to "Shortlist Ready":', updateResult);
 
       // Get shortlisted candidates from screening results if IDs provided
-      type ShortlistedCandidate = {
+      let shortlistedCandidates: Array<{
         cvId: string;
         candidateName: string;
-        fitScore: number;
+        fitScore: string;
         recommendation: string;
-      };
-      let shortlistedCandidates: ShortlistedCandidate[] = [];
+      }> = [];
       if (candidateIds.length > 0) {
         shortlistedCandidates = await db
           .select({
@@ -812,11 +817,15 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       const db = getDb();
 
       // Get or create thread
-      let thread = null;
+      type ThreadType = { id: string };
+      let thread: ThreadType | null = null;
       if (threadId) {
-        thread = await db.query.hiringThreads.findFirst({
+        const foundThread = await db.query.hiringThreads.findFirst({
           where: eq(schema.hiringThreads.id, threadId),
         });
+        if (foundThread) {
+          thread = foundThread;
+        }
       }
 
       // If no thread, create one
@@ -838,7 +847,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
           metadata: { createdVia: 'chat' } as unknown as Record<string, unknown>,
         });
 
-        thread = { id: newThreadId } as unknown as typeof thread;
+        thread = { id: newThreadId };
       }
 
       // Get last user message
@@ -891,10 +900,10 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
               jdId: 'JD-001',
               requestId,
               tenantId: session.tenant_id,
-              position: context.position,
-              teamSkillGap: context.teamSkillGap,
-              keyDeliverables: context.keyDeliverables,
-              salaryRange: context.salaryRange,
+              position: context.position as string,
+              teamSkillGap: context.teamSkillGap as string,
+              keyDeliverables: context.keyDeliverables as string,
+              salaryRange: context.salaryRange as string,
               seniorityLevel: 'Senior',
             });
 
