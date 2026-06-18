@@ -20,6 +20,21 @@ export type PermissionKey =
   | 'core.audit.read'
   | 'core.tenant.read'
   | 'core.tenant.write'
+  | 'hiring.candidate.confirm'
+  | 'hiring.candidate.screen'
+  | 'hiring.candidate.shortlist'
+  | 'hiring.candidate.view'
+  | 'hiring.decision.submit'
+  | 'hiring.decision.view'
+  | 'hiring.interview.prepare'
+  | 'hiring.interview.score'
+  | 'hiring.jd.approve'
+  | 'hiring.jd.edit'
+  | 'hiring.jd.view'
+  | 'hiring.request.approve'
+  | 'hiring.request.create'
+  | 'hiring.request.read'
+  | 'hiring.request.update'
   | 'identity.concept_map.read'
   | 'identity.concept_map.write'
   | 'identity.password.disable_local'
@@ -120,6 +135,21 @@ export const ALL_PERMISSIONS: readonly PermissionKey[] = [
   'core.audit.read',
   'core.tenant.read',
   'core.tenant.write',
+  'hiring.candidate.confirm',
+  'hiring.candidate.screen',
+  'hiring.candidate.shortlist',
+  'hiring.candidate.view',
+  'hiring.decision.submit',
+  'hiring.decision.view',
+  'hiring.interview.prepare',
+  'hiring.interview.score',
+  'hiring.jd.approve',
+  'hiring.jd.edit',
+  'hiring.jd.view',
+  'hiring.request.approve',
+  'hiring.request.create',
+  'hiring.request.read',
+  'hiring.request.update',
   'identity.concept_map.read',
   'identity.concept_map.write',
   'identity.password.disable_local',

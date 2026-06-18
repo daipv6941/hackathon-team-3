@@ -336,6 +336,56 @@ export const INVENTORY: StatementSpec[] = [
     ],
   },
   {
+    module: 'hiring',
+    statement: {
+      'hiring.request': ['create', 'read', 'update', 'approve'],
+      'hiring.jd': ['view', 'edit', 'approve'],
+      'hiring.candidate': ['view', 'shortlist', 'screen', 'confirm'],
+      'hiring.decision': ['submit', 'view'],
+      'hiring.interview': ['prepare', 'score'],
+    },
+    roles: [
+      {
+        slug: 'hiring.ta',
+        description: 'TA (Talent Acquisition) - full hiring workflow ownership',
+        permissions: [
+          'hiring.request.create',
+          'hiring.request.read',
+          'hiring.request.update',
+          'hiring.jd.view',
+          'hiring.jd.edit',
+          'hiring.jd.approve',
+          'hiring.candidate.view',
+          'hiring.candidate.shortlist',
+          'hiring.candidate.screen',
+          'hiring.candidate.confirm',
+          'hiring.decision.view',
+        ],
+      },
+      {
+        slug: 'hiring.hiring_manager',
+        description: 'Hiring Manager - provide feedback on candidates',
+        permissions: [
+          'hiring.request.read',
+          'hiring.jd.view',
+          'hiring.decision.submit',
+          'hiring.decision.view',
+          'hiring.candidate.view',
+        ],
+      },
+      {
+        slug: 'hiring.recruiter',
+        description: 'Recruiter - manage interview process',
+        permissions: [
+          'hiring.request.read',
+          'hiring.candidate.view',
+          'hiring.interview.prepare',
+          'hiring.interview.score',
+        ],
+      },
+    ],
+  },
+  {
     module: 'identity',
     statement: {
       'identity.user': [
