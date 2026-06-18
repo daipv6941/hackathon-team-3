@@ -12,6 +12,26 @@ describe('permission-keys codegen', () => {
     const path = 'packages/shared-rbac/src/generated/permission-keys.ts';
     const before = readFileSync(resolve(repoRoot, path), 'utf8');
     execSync('pnpm gen:rbac', { cwd: repoRoot });
-    expect(readFileSync(resolve(repoRoot, path), 'utf8')).toBe(before);
+    const after = readFileSync(resolve(repoRoot, path), 'utf8');
+
+    if (before !== after) {
+      console.error('\n=== CODEGEN DRIFT DETECTED ===');
+      console.error('\n=== BEFORE (committed) ===\n', before.substring(0, 500));
+      console.error('\n=== AFTER (generated) ===\n', after.substring(0, 500));
+
+      // Show line-by-line diff
+      const beforeLines = before.split('\n');
+      const afterLines = after.split('\n');
+      console.error('\n=== LINE DIFF ===');
+      for (let i = 0; i < Math.max(beforeLines.length, afterLines.length); i++) {
+        if (beforeLines[i] !== afterLines[i]) {
+          console.error(`Line ${i + 1}:`);
+          console.error(`  BEFORE: ${beforeLines[i]}`);
+          console.error(`  AFTER:  ${afterLines[i]}`);
+        }
+      }
+    }
+
+    expect(after).toBe(before);
   });
 });
