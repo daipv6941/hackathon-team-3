@@ -22,7 +22,7 @@ interface HiringRequest {
   teamSkillGap?: string;
   keyDeliverables?: string;
   jdId?: string;
-  shortlistResults?: Record<string, unknown>;
+  shortlistResults?: any;
 }
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -78,8 +78,8 @@ function RequestDetailPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [jd, setJd] = useState<Record<string, unknown> | null>(null);
-  const [shortlistResults, setShortlistResults] = useState<Record<string, unknown> | null>(null);
+  const [jd, setJd] = useState<any>(null);
+  const [shortlistResults, setShortlistResults] = useState<any>(null);
 
   const loadJd = useCallback(async (jdId: string) => {
     try {
@@ -473,7 +473,7 @@ function RequestDetailPage() {
                 <div className="mt-6">
                   <h3 className="font-semibold text-green-700">✅ Pass Candidates</h3>
                   <div className="mt-3 space-y-3">
-                    {shortlistResults.passCandidatesList.map((c: Record<string, unknown>) => (
+                    {shortlistResults.passCandidatesList.map((c: any) => (
                       <div
                         key={`${c.candidateName}-${c.fitScore}`}
                         className="rounded border border-green-200 bg-green-50 p-3"
@@ -513,26 +513,27 @@ function RequestDetailPage() {
                         className="rounded border border-yellow-200 bg-yellow-50 p-3"
                       >
                         <div className="flex justify-between">
-                          <span className="font-medium">{c.candidateName}</span>
+                          <span className="font-medium">{c.candidateName as string}</span>
                           <span className="text-sm font-bold text-yellow-700">
-                            {c.fitScore}/100
+                            {c.fitScore as number}/100
                           </span>
                         </div>
-                        <p className="mt-1 text-xs text-ink-subtle">{c.fitSummary}</p>
-                        {c.followUpQuestions && c.followUpQuestions.length > 0 && (
-                          <div className="mt-2">
-                            <p className="text-xs font-medium text-yellow-700">
-                              Follow-up Questions:
-                            </p>
-                            <ul className="mt-1 space-y-1">
-                              {c.followUpQuestions.slice(0, 3).map((q: string) => (
-                                <li key={q} className="text-xs text-ink">
-                                  • {q}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
+                        <p className="mt-1 text-xs text-ink-subtle">{c.fitSummary as string}</p>
+                        {(c.followUpQuestions as any[]) &&
+                          (c.followUpQuestions as any[]).length > 0 && (
+                            <div className="mt-2">
+                              <p className="text-xs font-medium text-yellow-700">
+                                Follow-up Questions:
+                              </p>
+                              <ul className="mt-1 space-y-1">
+                                {(c.followUpQuestions as any[]).slice(0, 3).map((q: string) => (
+                                  <li key={q} className="text-xs text-ink">
+                                    • {q}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                       </div>
                     ))}
                   </div>
@@ -549,10 +550,14 @@ function RequestDetailPage() {
                         className="rounded border border-red-200 bg-red-50 p-3"
                       >
                         <div className="flex justify-between">
-                          <span className="font-medium text-red-900">{c.candidateName}</span>
-                          <span className="text-xs font-bold text-red-700">{c.fitScore}/100</span>
+                          <span className="font-medium text-red-900">
+                            {c.candidateName as string}
+                          </span>
+                          <span className="text-xs font-bold text-red-700">
+                            {c.fitScore as number}/100
+                          </span>
                         </div>
-                        <p className="mt-1 text-xs text-red-700">{c.rejectReason}</p>
+                        <p className="mt-1 text-xs text-red-700">{c.rejectReason as string}</p>
                       </div>
                     ))}
                   </div>

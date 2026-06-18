@@ -99,7 +99,19 @@ export function ThreadList() {
 
       // Load thread data
       actions.setSelectedRequest(thread.request_id);
-      actions.setPhase(thread.current_phase as string);
+      const validPhases = [
+        'initial',
+        'complete',
+        'selection',
+        'jd-creation',
+        'jd-approval',
+        'cv-screening',
+        'confirmation',
+      ] as const;
+      const phase = validPhases.includes(thread.current_phase as any)
+        ? (thread.current_phase as (typeof validPhases)[number])
+        : 'initial';
+      actions.setPhase(phase);
 
       // Load messages
       interface MessageData {
