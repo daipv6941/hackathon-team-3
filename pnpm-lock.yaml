@@ -67,6 +67,9 @@ importers:
       '@seta/core':
         specifier: workspace:^
         version: link:../../packages/core
+      '@seta/hiring':
+        specifier: workspace:^
+        version: link:../../packages/hiring
       '@seta/identity':
         specifier: workspace:^
         version: link:../../packages/identity
@@ -155,6 +158,9 @@ importers:
       '@seta/core':
         specifier: workspace:^
         version: link:../../packages/core
+      '@seta/hiring':
+        specifier: workspace:^
+        version: link:../../packages/hiring
       '@seta/identity':
         specifier: workspace:^
         version: link:../../packages/identity
@@ -442,6 +448,9 @@ importers:
       '@seta/core':
         specifier: workspace:^
         version: link:../../packages/core
+      '@seta/hiring':
+        specifier: workspace:^
+        version: link:../../packages/hiring
       '@seta/identity':
         specifier: workspace:^
         version: link:../../packages/identity
@@ -673,6 +682,82 @@ importers:
       '@seta/shared-testing':
         specifier: workspace:^
         version: link:../shared-testing
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      drizzle-kit:
+        specifier: ^0.31.10
+        version: 0.31.10
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@25.9.3)(@vitest/coverage-v8@4.1.8)(happy-dom@20.9.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.6(@types/node@25.9.3)(typescript@6.0.3))(vite@8.0.16(@types/node@25.9.3)(esbuild@0.28.0)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/hiring:
+    dependencies:
+      '@ai-sdk/openai':
+        specifier: ^3.0.46
+        version: 3.0.71(zod@4.4.3)
+      '@mastra/core':
+        specifier: ^1.42.0
+        version: 1.42.0(@grpc/grpc-js@1.14.4)(ai@6.0.200(zod@4.4.3))(express@5.2.1)(zod@4.4.3)
+      '@mastra/pg':
+        specifier: ^1.13.0
+        version: 1.13.0(@mastra/core@1.42.0(@grpc/grpc-js@1.14.4)(ai@6.0.200(zod@4.4.3))(express@5.2.1)(zod@4.4.3))
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.9.1
+      '@seta/agent-sdk':
+        specifier: workspace:^
+        version: link:../../sdks/agent
+      ai:
+        specifier: ^6.0.200
+        version: 6.0.200(zod@4.4.3)
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.10.0)(kysely@0.29.2)(pg@8.21.0)
+      graphile-worker:
+        specifier: ^0.16.6
+        version: 0.16.6(typescript@6.0.3)
+      hono:
+        specifier: ^4.12.25
+        version: 4.12.25
+      pg:
+        specifier: ^8.21.0
+        version: 8.21.0
+      pino:
+        specifier: ^10.3.1
+        version: 10.3.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@seta/core':
+        specifier: workspace:^
+        version: link:../core
+      '@seta/identity':
+        specifier: workspace:^
+        version: link:../identity
+      '@seta/shared-config':
+        specifier: workspace:^
+        version: link:../shared-config
+      '@seta/shared-db':
+        specifier: workspace:^
+        version: link:../shared-db
+      '@seta/shared-rbac':
+        specifier: workspace:^
+        version: link:../shared-rbac
+      '@seta/shared-testing':
+        specifier: workspace:^
+        version: link:../shared-testing
+      '@seta/shared-types':
+        specifier: workspace:^
+        version: link:../shared-types
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.3
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
@@ -1705,6 +1790,12 @@ packages:
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
 
+  '@ai-sdk/openai@3.0.71':
+    resolution: {integrity: sha512-j6eBAa5oHFZ4U5CxpIV3T4zXNM/BviodNCZCL1qHkA4aqkwK9iQ18TWYz2DZcXpw4BO5pikKzqpXORxb1EnZGA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
   '@ai-sdk/provider-utils@3.0.25':
     resolution: {integrity: sha512-CvsRu+32Y8a167s+lrIBtsybvgTHp8j9y+6BeTvLeoW3Q+okw/b4CnNUFOLIXsRaKHQKAH+IHNJPYWywfpw0LA==}
     engines: {node: '>=18'}
@@ -1713,6 +1804,12 @@ packages:
 
   '@ai-sdk/provider-utils@4.0.27':
     resolution: {integrity: sha512-ubkAJ+xODouwtmN1tYlvTPphH1hPOBfZaEQe8U7skGvFAnIRs9PPpsq57bC2+Ky/MB4yzhd6YOsxTAx9sGpazw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.25.76 || ^4.1.8
+
+  '@ai-sdk/provider-utils@4.0.29':
+    resolution: {integrity: sha512-uhukHaCBvqkwBHkT8C2PrnqKTCoLn3pdHXqtcR9I8ErH+flbzgW4o7VHSNIup9LRu+WBvZIZDQLsx6rwl2tiOA==}
     engines: {node: '>=18'}
     peerDependencies:
       zod: ^3.25.76 || ^4.1.8
@@ -10883,6 +10980,12 @@ snapshots:
       pkce-challenge: 5.0.1
       zod: 4.4.3
 
+  '@ai-sdk/openai@3.0.71(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.10
+      '@ai-sdk/provider-utils': 4.0.29(zod@4.4.3)
+      zod: 4.4.3
+
   '@ai-sdk/provider-utils@3.0.25(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 2.0.3
@@ -10891,6 +10994,13 @@ snapshots:
       zod: 4.4.3
 
   '@ai-sdk/provider-utils@4.0.27(zod@4.4.3)':
+    dependencies:
+      '@ai-sdk/provider': 3.0.10
+      '@standard-schema/spec': 1.1.0
+      eventsource-parser: 3.1.0
+      zod: 4.4.3
+
+  '@ai-sdk/provider-utils@4.0.29(zod@4.4.3)':
     dependencies:
       '@ai-sdk/provider': 3.0.10
       '@standard-schema/spec': 1.1.0

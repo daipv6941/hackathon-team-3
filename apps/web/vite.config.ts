@@ -16,6 +16,8 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
+        secure: false,
+        ws: true,
         // SSE pass-through: drop any framing/encoding from upstream that would let
         // http-proxy accumulate chunks, and signal proxies to disable buffering so
         // assistant tokens stream progressively instead of arriving all at once.
