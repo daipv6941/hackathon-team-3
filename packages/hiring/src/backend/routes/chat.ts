@@ -6,7 +6,13 @@ import { stream } from 'hono/streaming';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import * as schema from '../db/index.ts';
-import { draftJd, extractRequestDetails, fetchContext, scoreJd } from '../orchestration.ts';
+import {
+  draftJd,
+  extractRequestDetails,
+  fetchContext,
+  reviseJdWithFeedback,
+  scoreJd,
+} from '../orchestration.ts';
 
 export interface HiringRouteDeps {
   mastra: Mastra;
@@ -255,6 +261,44 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
   });
 
   /**
+   * POST /v1/jd/revise
+   * Revise JD based on user feedback
+   */
+  app.post('/v1/jd/revise', async (c) => {
+    try {
+      const { currentJdText, userFeedback, position, teamSkillGap, keyDeliverables } =
+        await c.req.json();
+
+      console.log('📨 POST /v1/jd/revise called');
+
+      if (!currentJdText || !userFeedback) {
+        return c.json({ error: 'currentJdText and userFeedback required' }, 400);
+      }
+
+      console.log('🔄 Revising JD based on user feedback...');
+
+      // Call orchestration function to revise JD
+      const result = await reviseJdWithFeedback({
+        currentJdText: String(currentJdText),
+        userFeedback: String(userFeedback),
+        position: String(position || 'Unknown Position'),
+        teamSkillGap: String(teamSkillGap || ''),
+        keyDeliverables: String(keyDeliverables || ''),
+      });
+
+      console.log('✅ JD revised successfully');
+
+      return c.json({
+        success: true,
+        revisedJdText: result.revisedText,
+      });
+    } catch (error) {
+      console.error('❌ Revise JD error:', error);
+      return c.json({ error: 'Failed to revise JD' }, 500);
+    }
+  });
+
+  /**
    * PUT /v1/requests/:requestId/status
    * Update request status
    */
@@ -331,6 +375,58 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       return c.json(jd);
     } catch (error) {
       console.error('Get JD error:', error);
+      return c.json({ error: 'Failed to fetch JD' }, 500);
+    }
+  });
+
+  /**
+   * GET /v1/jd
+   * Get JD by requestId query parameter
+   */
+  app.get('/v1/jd', async (c) => {
+    try {
+      const requestId = c.req.query('requestId');
+
+      if (!requestId) {
+        return c.json({ error: 'requestId query parameter is required' }, 400);
+      }
+
+      const db = getDb();
+
+      const results = await db
+        .select({
+          jdId: schema.hiringJobs.jd_id,
+          requestId: schema.hiringJobs.request_id,
+          position: schema.hiringJobs.position,
+          seniorityLevel: schema.hiringJobs.seniority_level,
+          minYoe: schema.hiringJobs.min_yoe,
+          maxYoe: schema.hiringJobs.max_yoe,
+          mustHaveSkills: schema.hiringJobs.must_have_skills,
+          niceToHaveSkills: schema.hiringJobs.nice_to_have_skills,
+          englishLevelRequired: schema.hiringJobs.english_level_required,
+          workMode: schema.hiringJobs.work_mode,
+          salaryRange: schema.hiringJobs.salary_range,
+          keyResponsibilities: schema.hiringJobs.key_responsibilities,
+          jdFullText: schema.hiringJobs.jd_full_text,
+          status: schema.hiringJobs.status,
+          agentClarityScore: schema.hiringJobs.agent_clarity_score,
+          createdAt: schema.hiringJobs.created_at,
+        })
+        .from(schema.hiringJobs)
+        .where(eq(schema.hiringJobs.request_id, String(requestId)))
+        .orderBy(desc(schema.hiringJobs.created_at))
+        .limit(1);
+
+      const jd = results[0] || null;
+
+      if (!jd) {
+        return c.json({ error: 'No JD found for this request' }, 404);
+      }
+
+      console.log('📄 GET /v1/jd (by requestId) response:', { requestId, jdId: jd.jdId });
+      return c.json({ jd });
+    } catch (error) {
+      console.error('Get JD by requestId error:', error);
       return c.json({ error: 'Failed to fetch JD' }, 500);
     }
   });

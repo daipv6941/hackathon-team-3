@@ -14,7 +14,7 @@ interface HiringRequest {
 }
 
 export function HiringRequestSelector() {
-  const { actions } = useHiringChat();
+  const { state, actions } = useHiringChat();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [requests, setRequests] = useState<HiringRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -34,10 +34,20 @@ export function HiringRequestSelector() {
         if (!response.ok) throw new Error('Failed to load requests');
         const data = await response.json();
 
-        // Filter to only show requests ready for JD workflow (New or JD Draft)
-        const availableRequests = (data.requests || []).filter(
-          (r: HiringRequest) => r.requestStatus === 'New' || r.requestStatus === 'JD Draft',
-        );
+        // Filter based on selected flow
+        let availableRequests: HiringRequest[];
+        if (state.selectedFlow === 'cv-shortlist') {
+          // For CV screening flow: show requests with JD Approved or CV Screening status
+          availableRequests = (data.requests || []).filter(
+            (r: HiringRequest) =>
+              r.requestStatus === 'JD Approved' || r.requestStatus === 'CV Screening',
+          );
+        } else {
+          // For JD draft flow: show New or JD Draft requests
+          availableRequests = (data.requests || []).filter(
+            (r: HiringRequest) => r.requestStatus === 'New' || r.requestStatus === 'JD Draft',
+          );
+        }
 
         setRequests(availableRequests);
       } catch (error) {
@@ -49,9 +59,9 @@ export function HiringRequestSelector() {
     };
 
     loadRequests();
-  }, []);
+  }, [state.selectedFlow]);
 
-  const handleSelectRequest = (request: HiringRequest) => {
+  const handleSelectRequest = async (request: HiringRequest) => {
     setSelectedId(request.id);
 
     // Clear old thread ID when starting NEW request workflow
@@ -66,14 +76,81 @@ export function HiringRequestSelector() {
       type: 'text',
     });
 
-    actions.addMessage({
-      role: 'assistant',
-      content: `✅ Great! I'll work with **${request.requestId}**: ${request.positionTitle}\n\nTeam: ${request.teamName}\n\nLet me fetch the business context, team skill gaps, and headcount plan...`,
-      type: 'action',
-    });
+    // Check if this is CV screening flow
+    if (state.selectedFlow === 'cv-shortlist') {
+      // For CV screening: load the saved JD and show it
+      actions.addMessage({
+        role: 'assistant',
+        content: `✅ Great! I'll screen candidates for **${request.requestId}**: ${request.positionTitle}\n\nLoading the approved JD...`,
+        type: 'action',
+      });
 
-    // Advance to initial phase to start the workflow
-    actions.setPhase('initial');
+      actions.setPhase('jd-approval');
+      actions.setLoading(true);
+
+      try {
+        // Fetch the JD from database
+        const jdResponse = await fetch(
+          `http://localhost:3000/hiring/v1/jd?requestId=${request.requestId}`,
+          {
+            method: 'GET',
+            credentials: 'include',
+          },
+        );
+
+        if (!jdResponse.ok) {
+          throw new Error('Failed to fetch JD');
+        }
+
+        const jdData = await jdResponse.json();
+        if (!jdData.jd) {
+          throw new Error('No JD found for this request');
+        }
+
+        const jdId = jdData.jd.jdId;
+        actions.setSelectedJob(jdId);
+
+        // Display the saved JD with the approval format
+        const jdContent = jdData.jd.jdFullText || '';
+        actions.addMessage({
+          role: 'assistant',
+          content: `✅ **JD Approved & Saved!**
+
+Your JD has been approved and saved to the system. The hiring request is now in **JD Approved** status.
+
+**Next steps:**
+1. Review the approved JD
+2. Start screening CVs from your candidate pool
+3. Move to shortlist finalization
+
+Ready to screen candidates?
+
+---
+
+${jdContent}`,
+          type: 'action',
+        });
+      } catch (error) {
+        console.error('Screening error:', error);
+        actions.addMessage({
+          role: 'assistant',
+          content: '❌ Failed to load JD. Please try again.',
+          type: 'text',
+        });
+      } finally {
+        actions.setLoading(false);
+      }
+    } else {
+      // For JD draft: show normal flow
+      actions.addMessage({
+        role: 'assistant',
+        content: `✅ Great! I'll work with **${request.requestId}**: ${request.positionTitle}\n\nTeam: ${request.teamName}\n\nLet me fetch the business context, team skill gaps, and headcount plan...`,
+        type: 'action',
+      });
+
+      // Advance to initial phase to start the workflow
+      actions.setPhase('initial');
+    }
   };
 
   const handleCreateNew = () => {
@@ -99,7 +176,9 @@ export function HiringRequestSelector() {
       {/* Existing requests */}
       <div>
         <p className="mb-2 text-xs font-semibold text-ink-subtle">
-          AVAILABLE REQUESTS (Ready for JD)
+          {state.selectedFlow === 'cv-shortlist'
+            ? 'AVAILABLE REQUESTS (With Approved JD)'
+            : 'AVAILABLE REQUESTS (Ready for JD)'}
         </p>
         <div className="grid gap-2">
           {isLoading ? (

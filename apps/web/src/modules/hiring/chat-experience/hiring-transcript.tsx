@@ -1,14 +1,7 @@
 'use client';
 
 import { Button } from '@seta/shared-ui';
-import {
-  AlertCircle,
-  CheckCircle2,
-  MessageCircle,
-  Search,
-  ThumbsDown,
-  ThumbsUp,
-} from 'lucide-react';
+import { AlertCircle, CheckCircle2, MessageCircle, Search, ThumbsUp } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { HiringRequestSelector } from './hiring-request-selector';
 import { HiringSelection } from './hiring-selection';
@@ -82,6 +75,10 @@ function MessageBubble({
   const { state, actions } = useHiringChat();
   const isUser = message.role === 'user';
   const [showActions, setShowActions] = useState(true);
+  const [feedbackInput, setFeedbackInput] = useState('');
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const showFeedbackInput =
+    (message.metadata as Record<string, unknown> | undefined)?.showFeedbackInput === true;
 
   const handleApprove = async () => {
     try {
@@ -273,84 +270,59 @@ ${result.summary}`;
     }
   };
 
-  const handlePolishJd = () => {
-    actions.addMessage({
-      role: 'user',
-      content: '✨ Polish JD - make it more attractive for social media',
-      type: 'text',
-    });
-    // Advance to jd-approval phase for polish workflow
-    actions.setPhase('jd-approval');
-    actions.addMessage({
-      role: 'assistant',
-      content: `🎨 **JD Polish & Enhancement**
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackInput.trim()) return;
 
-I've made your JD more engaging for social media posting:
+    try {
+      setIsSubmittingFeedback(true);
+      const jdContent =
+        (message.metadata as Record<string, unknown> | undefined)?.jdContent || message.content;
 
-✨ **Key Improvements:**
-- Added emojis and visual hierarchy
-- Emphasized company culture and growth opportunities
-- Highlighted unique benefits and perks
-- Used power words and action-oriented language
-- Formatted for maximum LinkedIn/Facebook impact
+      actions.addMessage({
+        role: 'user',
+        content: `Feedback: ${feedbackInput}`,
+        type: 'text',
+      });
 
-📱 **Ready to Share:** Copy below and post on LinkedIn, Facebook, or your careers page
+      console.log('📤 Submitting feedback for JD revision...');
 
----
+      const response = await fetch('http://localhost:3000/hiring/v1/jd/revise', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          currentJdText: String(jdContent),
+          userFeedback: feedbackInput,
+          position: state.selectedRequestId || 'Unknown',
+          teamSkillGap: 'Based on feedback',
+          keyDeliverables: 'Based on feedback',
+        }),
+      });
 
-🚀 **We're Hiring: Senior Backend Developer**
+      if (!response.ok) {
+        throw new Error('Failed to revise JD');
+      }
 
-Are you passionate about building scalable systems that power millions? We're looking for an experienced **Senior Backend Developer** to join our Platform Team!
+      const result = await response.json();
+      console.log('✅ JD revised successfully');
 
-**The Role:**
-Lead the technical evolution of our microservices architecture. You'll own critical infrastructure projects, mentor junior engineers, and shape our platform's future.
+      actions.addMessage({
+        role: 'assistant',
+        content: result.revisedJdText,
+        type: 'action',
+      });
 
-**What You'll Do:**
-- 🏗️ Design and implement scalable microservices architecture
-- ⚡ Master Kafka and Redis for high-performance systems
-- 👥 Mentor engineers and conduct technical reviews
-- 🔧 Drive deployment automation and observability
-- 🚨 Own on-call rotations and incident response
-
-**About You:**
-- 5+ years of production backend experience at scale
-- Deep expertise in Kafka, Redis, and distributed systems
-- Advanced system design and architecture knowledge
-- Strong communicator and natural mentor
-- B2+ English fluency
-
-**Nice-to-Have:**
-- Kubernetes / container orchestration experience
-- Open-source contributions
-- High-traffic, low-latency systems experience
-- Team leadership background
-
-**Why Join Us:**
-💰 Competitive salary ($1500-$2500/month)
-🏥 Comprehensive health insurance
-📚 $2000/year professional development budget
-🌍 Hybrid work (2-3 days on-site)
-🎯 Flexible hours and timezone-friendly
-📈 Stock options for senior engineers
-🎉 Team events and conference sponsorship
-
-**Ready to make an impact?** Apply now or message us for more details!
-
----
-
-Would you like me to revise any section or approve this JD now?`,
-      type: 'action',
-    });
-    setShowActions(false);
-  };
-
-  const handleRevise = () => {
-    actions.addMessage({
-      role: 'user',
-      content: '❌ Needs revision - let me improve it',
-      type: 'text',
-    });
-    setShowActions(false);
+      setFeedbackInput('');
+    } catch (error) {
+      console.error('❌ Feedback submission error:', error);
+      actions.addMessage({
+        role: 'assistant',
+        content: '❌ Failed to revise JD. Please try again.',
+        type: 'text',
+      });
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
   };
 
   const handleConfirmHiringRequest = async () => {
@@ -418,12 +390,21 @@ Would you like me to revise any section or approve this JD now?`,
                     <ThumbsUp className="h-3 w-3" />
                     Approve
                   </Button>
-                  <Button size="sm" variant="secondary" onClick={handlePolishJd} className="gap-1">
-                    ✨ Polish & Share
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={handleRevise} className="gap-1">
-                    <ThumbsDown className="h-3 w-3" />
-                    Revise
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      actions.addMessage({
+                        role: 'assistant',
+                        content: 'Please share your feedback to improve this JD:',
+                        type: 'action',
+                        metadata: { showFeedbackInput: true, jdContent: message.content },
+                      });
+                      setShowActions(false);
+                    }}
+                    className="gap-1"
+                  >
+                    💬 Feedback
                   </Button>
                 </div>
               )}
@@ -542,6 +523,36 @@ Would you like me to revise any section or approve this JD now?`,
                 </div>
               )}
           </>
+        )}
+
+        {/* Feedback input for JD revision */}
+        {showFeedbackInput && !isUser && (
+          <div className="mt-3 flex flex-col gap-2">
+            <input
+              type="text"
+              placeholder="e.g., Make it more engaging, Simplify the language, Add more details..."
+              value={feedbackInput}
+              onChange={(e) => setFeedbackInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !isSubmittingFeedback) {
+                  handleFeedbackSubmit();
+                }
+              }}
+              disabled={isSubmittingFeedback}
+              className="rounded-lg border border-hairline bg-surface-0 px-3 py-2 text-sm text-ink placeholder-ink-subtle focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="default"
+                onClick={handleFeedbackSubmit}
+                disabled={isSubmittingFeedback || !feedbackInput.trim()}
+                className="gap-1"
+              >
+                {isSubmittingFeedback ? 'Revising...' : 'Submit Feedback'}
+              </Button>
+            </div>
+          </div>
         )}
 
         <div className="mt-1 text-xs text-ink-subtle">

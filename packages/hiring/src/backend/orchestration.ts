@@ -745,3 +745,47 @@ Return ONLY the JSON object, no other text.`;
     missing_fields,
   };
 }
+
+/**
+ * Revise JD based on user feedback
+ */
+export const ReviseJdWithFeedbackInputSchema = z.object({
+  currentJdText: z.string(),
+  userFeedback: z.string(),
+  position: z.string(),
+  teamSkillGap: z.string(),
+  keyDeliverables: z.string(),
+});
+
+export async function reviseJdWithFeedback(input: z.infer<typeof ReviseJdWithFeedbackInputSchema>) {
+  console.log('reviseJdWithFeedback: Revising JD based on user feedback');
+
+  const model = openai('gpt-4-turbo');
+
+  const prompt = `You are an expert Technical Recruiter. You are revising a job description based on user feedback.
+
+CURRENT JD:
+${input.currentJdText}
+
+USER FEEDBACK:
+${input.userFeedback}
+
+CONTEXT:
+- Position: ${input.position}
+- Team Skill Gaps: ${input.teamSkillGap}
+- Key Deliverables: ${input.keyDeliverables}
+
+Please revise the JD to address the user's feedback while maintaining professional standards and clarity. Keep the same structure and sections, but improve based on the feedback provided.
+
+Return the complete revised JD in markdown format.`;
+
+  const result = await generateText({
+    model,
+    prompt,
+    temperature: 0.7,
+  });
+
+  return {
+    revisedText: result.text,
+  };
+}

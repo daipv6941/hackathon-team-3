@@ -119,7 +119,10 @@
       "Bash(pnpm --filter @seta/server dev)",
       "Bash(curl -v -X GET http://localhost:3000/hiring/v1/shortlist/results/REQ-006 -H 'Cookie: __Secure-auth_token=test')",
       "Bash(grep -n '<button' /Users/macmini/web/hackathon-team-3/apps/web/src/routes/_authed/hiring/requests/'$'requestId\\\\x2Etsx' | grep -v 'type=')",
-      "Bash(grep -n '<button' /Users/macmini/web/hackathon-team-3/apps/web/src/routes/_authed/hiring/requests/\\\\$requestId.tsx | grep -v 'type=')"
+      "Bash(grep -n '<button' /Users/macmini/web/hackathon-team-3/apps/web/src/routes/_authed/hiring/requests/\\\\$requestId.tsx | grep -v 'type=')",
+      "Bash(npm exec *)",
+      "Bash(npx biome *)",
+      "Bash(/Users/macmini/.nvm/versions/node/v22.13.1/bin/node --version)"
     ],
     "additionalDirectories": [
       "/private/tmp",
