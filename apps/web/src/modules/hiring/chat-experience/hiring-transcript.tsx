@@ -353,6 +353,35 @@ Would you like me to revise any section or approve this JD now?`,
     setShowActions(false);
   };
 
+  const handleConfirmHiringRequest = async () => {
+    try {
+      actions.setLoading(true);
+      actions.addMessage({
+        role: 'user',
+        content: '✅ Confirmed - save this hiring request',
+        type: 'text',
+      });
+
+      // The actual saving happens through the composer's button action
+      // This just triggers the confirmation
+      const event = new CustomEvent('confirm-hiring-request');
+      window.dispatchEvent(event);
+    } finally {
+      actions.setLoading(false);
+    }
+  };
+
+  const handleChangeHiringRequest = () => {
+    actions.addMessage({
+      role: 'user',
+      content: '❌ I want to change some details',
+      type: 'text',
+    });
+
+    const event = new CustomEvent('change-hiring-request');
+    window.dispatchEvent(event);
+  };
+
   return (
     <div className={`flex items-start gap-3 ${isUser ? 'justify-end' : ''}`}>
       {!isUser && (
@@ -395,6 +424,32 @@ Would you like me to revise any section or approve this JD now?`,
                   <Button size="sm" variant="secondary" onClick={handleRevise} className="gap-1">
                     <ThumbsDown className="h-3 w-3" />
                     Revise
+                  </Button>
+                </div>
+              )}
+
+            {/* Hiring request summary confirmation */}
+            {state.selectedRequestId === 'creating' &&
+              message.content.includes('HIRING_REQUEST_SUMMARY') && (
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={handleConfirmHiringRequest}
+                    disabled={state.isLoading}
+                    className="gap-1"
+                  >
+                    <CheckCircle2 className="h-3 w-3" />
+                    Confirm
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={handleChangeHiringRequest}
+                    disabled={state.isLoading}
+                    className="gap-1"
+                  >
+                    Change Details
                   </Button>
                 </div>
               )}

@@ -134,6 +134,91 @@ export function HiringComposer() {
     }
   }, [state.selectedRequestId, actions]);
 
+  const saveHiringRequest = useCallback(
+    async (data: Record<string, unknown>) => {
+      try {
+        console.log('💾 Saving hiring request...');
+        const response = await fetch('http://localhost:3000/hiring/v1/requests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            position_title: data.position_title,
+            team_name: data.team_name,
+            urgency_level: data.urgency_level,
+            headcount_requested: data.headcount_requested,
+            business_justification: data.business_justification,
+            team_skill_gap_summary: data.team_skill_gap_summary,
+            key_deliverables: data.key_deliverables,
+            salary_range: data.salary_range,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to save hiring request');
+        }
+
+        const result = (await response.json()) as { requestId?: string };
+        const requestId = result.requestId;
+
+        console.log(`✅ Hiring request ${requestId} saved successfully`);
+
+        actions.addMessage({
+          role: 'assistant',
+          content: `✅ Perfect! I've saved your hiring request **${requestId}**.\n\nWould you like me to start creating the job description now?`,
+          type: 'action',
+        });
+
+        // Set the new request as selected
+        if (requestId) {
+          actions.setSelectedRequest(requestId);
+        }
+
+        // Reset extraction state
+        setExtractionPhase('initial-prompt');
+        setExtractedData({});
+      } catch (error) {
+        console.error('❌ Save error:', error);
+        actions.addMessage({
+          role: 'assistant',
+          content: '❌ Failed to save the hiring request. Please try again.',
+          type: 'text',
+        });
+      }
+
+      actions.setLoading(false);
+    },
+    [actions],
+  );
+
+  // Handle hiring request confirmation/change via buttons
+  useEffect(() => {
+    const handleConfirm = () => {
+      console.log('✅ User confirmed hiring request via button');
+      saveHiringRequest(extractedData);
+    };
+
+    const handleChange = () => {
+      console.log('🔄 User wants to change hiring request details');
+      setExtractionPhase('initial-prompt');
+      setExtractedData({});
+      actions.addMessage({
+        role: 'assistant',
+        content:
+          "No problem! Please describe your hiring request again, and I'll extract the details.",
+        type: 'action',
+      });
+    };
+
+    window.addEventListener('confirm-hiring-request', handleConfirm as EventListener);
+    window.addEventListener('change-hiring-request', handleChange as EventListener);
+
+    return () => {
+      window.removeEventListener('confirm-hiring-request', handleConfirm as EventListener);
+      window.removeEventListener('change-hiring-request', handleChange as EventListener);
+    };
+  }, [extractedData, actions, saveHiringRequest]);
+
   // Load existing thread from localStorage on mount only
   // biome-ignore lint/correctness/useExhaustiveDependencies: checking initial state only
   useEffect(() => {
@@ -316,7 +401,7 @@ export function HiringComposer() {
 
   const showExtractedSummary = (data: Record<string, unknown>) => {
     const summary = `
-📋 **Hiring Request Summary**
+📋 HIRING_REQUEST_SUMMARY
 
 **Position:** ${String(data.position_title) || 'TBD'}
 **Team:** ${String(data.team_name) || 'TBD'}
@@ -333,8 +418,6 @@ ${data.business_justification || 'TBD'}
 
 **Team Skill Gaps:**
 ${data.team_skill_gap_summary || 'TBD'}
-
-Is everything correct? Reply with **confirm** to save or **change** to modify any details.
     `.trim();
 
     actions.addMessage({
@@ -344,60 +427,6 @@ Is everything correct? Reply with **confirm** to save or **change** to modify an
     });
 
     setExtractionPhase('completed');
-  };
-
-  const saveHiringRequest = async (data: Record<string, unknown>) => {
-    try {
-      console.log('💾 Saving hiring request...');
-      const response = await fetch('http://localhost:3000/hiring/v1/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          position_title: data.position_title,
-          team_name: data.team_name,
-          urgency_level: data.urgency_level,
-          headcount_requested: data.headcount_requested,
-          business_justification: data.business_justification,
-          team_skill_gap_summary: data.team_skill_gap_summary,
-          key_deliverables: data.key_deliverables,
-          salary_range: data.salary_range,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save hiring request');
-      }
-
-      const result = (await response.json()) as { requestId?: string };
-      const requestId = result.requestId;
-
-      console.log(`✅ Hiring request ${requestId} saved successfully`);
-
-      actions.addMessage({
-        role: 'assistant',
-        content: `✅ Perfect! I've saved your hiring request **${requestId}**.\n\nWould you like me to start creating the job description now?`,
-        type: 'action',
-      });
-
-      // Set the new request as selected
-      if (requestId) {
-        actions.setSelectedRequest(requestId);
-      }
-
-      // Reset extraction state
-      setExtractionPhase('initial-prompt');
-      setExtractedData({});
-    } catch (error) {
-      console.error('❌ Save error:', error);
-      actions.addMessage({
-        role: 'assistant',
-        content: '❌ Failed to save the hiring request. Please try again.',
-        type: 'text',
-      });
-    }
-
-    actions.setLoading(false);
   };
 
   const handleSend = async () => {
