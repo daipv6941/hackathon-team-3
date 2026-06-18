@@ -22,7 +22,7 @@ interface HiringRequest {
   teamSkillGap?: string;
   keyDeliverables?: string;
   jdId?: string;
-  shortlistResults?: any;
+  shortlistResults?: Record<string, unknown>;
 }
 
 const STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -78,8 +78,8 @@ function RequestDetailPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [jd, setJd] = useState<any>(null);
-  const [shortlistResults, setShortlistResults] = useState<any>(null);
+  const [jd, setJd] = useState<Record<string, unknown> | null>(null);
+  const [shortlistResults, setShortlistResults] = useState<Record<string, unknown> | null>(null);
 
   const loadJd = useCallback(async (jdId: string) => {
     try {
@@ -311,23 +311,23 @@ function RequestDetailPage() {
             <h2 className="text-lg font-semibold">Details</h2>
             <div className="mt-4 space-y-4">
               <div>
-                <label className="text-sm font-medium text-ink-subtle">Team</label>
+                <span className="text-sm font-medium text-ink-subtle">Team</span>
                 <p className="mt-1 text-sm">{request.teamName}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-ink-subtle">Headcount</label>
+                  <span className="text-sm font-medium text-ink-subtle">Headcount</span>
                   <p className="mt-1 text-sm">{request.headcountRequested}</p>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-ink-subtle">Urgency</label>
+                  <span className="text-sm font-medium text-ink-subtle">Urgency</span>
                   <p className="mt-1 text-sm">{request.urgencyLevel}</p>
                 </div>
               </div>
 
               <div>
-                <label className="text-sm font-medium text-ink-subtle">Created</label>
+                <span className="text-sm font-medium text-ink-subtle">Created</span>
                 <p className="mt-1 text-sm">{formatDate(request.createdAt)}</p>
               </div>
             </div>
@@ -353,21 +353,19 @@ function RequestDetailPage() {
               <div className="mt-6 space-y-4">
                 {jd.position && (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">Position</label>
+                    <span className="text-sm font-medium text-ink-subtle">Position</span>
                     <p className="mt-1 text-sm font-medium">{jd.position}</p>
                   </div>
                 )}
                 {jd.seniorityLevel && (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">Seniority Level</label>
+                    <span className="text-sm font-medium text-ink-subtle">Seniority Level</span>
                     <p className="mt-1 text-sm">{jd.seniorityLevel}</p>
                   </div>
                 )}
                 {jd.minYoe !== null || jd.maxYoe !== null ? (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">
-                      Years of Experience
-                    </label>
+                    <span className="text-sm font-medium text-ink-subtle">Years of Experience</span>
                     <p className="mt-1 text-sm">
                       {jd.minYoe && jd.maxYoe
                         ? `${jd.minYoe} - ${jd.maxYoe} years`
@@ -381,51 +379,49 @@ function RequestDetailPage() {
                 ) : null}
                 {jd.mustHaveSkills && (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">Must-Have Skills</label>
+                    <span className="text-sm font-medium text-ink-subtle">Must-Have Skills</span>
                     <p className="mt-1 text-sm whitespace-pre-wrap">{jd.mustHaveSkills}</p>
                   </div>
                 )}
                 {jd.niceToHaveSkills && (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">
-                      Nice-to-Have Skills
-                    </label>
+                    <span className="text-sm font-medium text-ink-subtle">Nice-to-Have Skills</span>
                     <p className="mt-1 text-sm whitespace-pre-wrap">{jd.niceToHaveSkills}</p>
                   </div>
                 )}
                 {jd.englishLevelRequired && (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">
+                    <span className="text-sm font-medium text-ink-subtle">
                       English Level Required
-                    </label>
+                    </span>
                     <p className="mt-1 text-sm">{jd.englishLevelRequired}</p>
                   </div>
                 )}
                 {jd.workMode && (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">Work Mode</label>
+                    <span className="text-sm font-medium text-ink-subtle">Work Mode</span>
                     <p className="mt-1 text-sm">{jd.workMode}</p>
                   </div>
                 )}
                 {jd.salaryRange && (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">Salary Range</label>
+                    <span className="text-sm font-medium text-ink-subtle">Salary Range</span>
                     <p className="mt-1 text-sm">{jd.salaryRange}</p>
                   </div>
                 )}
                 {jd.keyResponsibilities && (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">
+                    <span className="text-sm font-medium text-ink-subtle">
                       Key Responsibilities
-                    </label>
+                    </span>
                     <p className="mt-1 text-sm whitespace-pre-wrap">{jd.keyResponsibilities}</p>
                   </div>
                 )}
                 {jd.jdFullText && (
                   <div>
-                    <label className="text-sm font-medium text-ink-subtle">
+                    <span className="text-sm font-medium text-ink-subtle">
                       Full Job Description
-                    </label>
+                    </span>
                     <div className="mt-2 max-h-96 overflow-y-auto rounded border border-hairline bg-surface-1 p-4 text-sm leading-relaxed text-ink prose prose-sm max-w-none">
                       <div className="whitespace-pre-wrap">{jd.jdFullText}</div>
                     </div>
@@ -477,8 +473,11 @@ function RequestDetailPage() {
                 <div className="mt-6">
                   <h3 className="font-semibold text-green-700">✅ Pass Candidates</h3>
                   <div className="mt-3 space-y-3">
-                    {shortlistResults.passCandidatesList.map((c: any, idx: number) => (
-                      <div key={idx} className="rounded border border-green-200 bg-green-50 p-3">
+                    {shortlistResults.passCandidatesList.map((c: Record<string, unknown>) => (
+                      <div
+                        key={`${c.candidateName}-${c.fitScore}`}
+                        className="rounded border border-green-200 bg-green-50 p-3"
+                      >
                         <div className="flex justify-between">
                           <span className="font-medium">{c.candidateName}</span>
                           <span className="text-sm font-bold text-green-700">{c.fitScore}/100</span>
@@ -490,8 +489,8 @@ function RequestDetailPage() {
                               Interview Questions:
                             </p>
                             <ul className="mt-1 space-y-1">
-                              {c.interviewQuestions.slice(0, 3).map((q: string, i: number) => (
-                                <li key={i} className="text-xs text-ink">
+                              {c.interviewQuestions.slice(0, 3).map((q: string) => (
+                                <li key={q} className="text-xs text-ink">
                                   • {q}
                                 </li>
                               ))}
@@ -508,8 +507,11 @@ function RequestDetailPage() {
                 <div className="mt-6">
                   <h3 className="font-semibold text-yellow-700">⚠️ Need More Info</h3>
                   <div className="mt-3 space-y-3">
-                    {shortlistResults.needMoreInfoList.map((c: any, idx: number) => (
-                      <div key={idx} className="rounded border border-yellow-200 bg-yellow-50 p-3">
+                    {shortlistResults.needMoreInfoList.map((c: Record<string, unknown>) => (
+                      <div
+                        key={`${c.candidateName}-${c.fitScore}`}
+                        className="rounded border border-yellow-200 bg-yellow-50 p-3"
+                      >
                         <div className="flex justify-between">
                           <span className="font-medium">{c.candidateName}</span>
                           <span className="text-sm font-bold text-yellow-700">
@@ -523,8 +525,8 @@ function RequestDetailPage() {
                               Follow-up Questions:
                             </p>
                             <ul className="mt-1 space-y-1">
-                              {c.followUpQuestions.slice(0, 3).map((q: string, i: number) => (
-                                <li key={i} className="text-xs text-ink">
+                              {c.followUpQuestions.slice(0, 3).map((q: string) => (
+                                <li key={q} className="text-xs text-ink">
                                   • {q}
                                 </li>
                               ))}
@@ -541,8 +543,11 @@ function RequestDetailPage() {
                 <div className="mt-6">
                   <h3 className="font-semibold text-red-700">❌ Reject Candidates</h3>
                   <div className="mt-3 space-y-2">
-                    {shortlistResults.rejectCandidatesList.map((c: any, idx: number) => (
-                      <div key={idx} className="rounded border border-red-200 bg-red-50 p-3">
+                    {shortlistResults.rejectCandidatesList.map((c: Record<string, unknown>) => (
+                      <div
+                        key={`${c.candidateName}-${c.fitScore}`}
+                        className="rounded border border-red-200 bg-red-50 p-3"
+                      >
                         <div className="flex justify-between">
                           <span className="font-medium text-red-900">{c.candidateName}</span>
                           <span className="text-xs font-bold text-red-700">{c.fitScore}/100</span>

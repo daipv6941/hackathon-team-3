@@ -189,7 +189,11 @@ function CandidatesPage() {
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Add New Candidate</h2>
-            <button onClick={() => setShowForm(false)} className="text-ink-subtle hover:text-ink">
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="text-ink-subtle hover:text-ink"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -197,8 +201,11 @@ function CandidatesPage() {
           <form onSubmit={handleAddCandidate} className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div>
-                <label className="text-sm font-medium">CV ID *</label>
+                <label htmlFor="cv-id" className="text-sm font-medium">
+                  CV ID *
+                </label>
                 <Input
+                  id="cv-id"
                   type="text"
                   placeholder="CV-001"
                   required
@@ -208,8 +215,11 @@ function CandidatesPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Candidate ID *</label>
+                <label htmlFor="candidate-id" className="text-sm font-medium">
+                  Candidate ID *
+                </label>
                 <Input
+                  id="candidate-id"
                   type="text"
                   placeholder="CAND-001"
                   required
@@ -219,8 +229,11 @@ function CandidatesPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Full Name *</label>
+                <label htmlFor="full-name" className="text-sm font-medium">
+                  Full Name *
+                </label>
                 <Input
+                  id="full-name"
                   type="text"
                   placeholder="John Doe"
                   required
@@ -230,8 +243,11 @@ function CandidatesPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Current Title</label>
+                <label htmlFor="current-title" className="text-sm font-medium">
+                  Current Title
+                </label>
                 <Input
+                  id="current-title"
                   type="text"
                   placeholder="Senior Developer"
                   value={formData.currentTitle}
@@ -240,8 +256,11 @@ function CandidatesPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Current Company</label>
+                <label htmlFor="current-company" className="text-sm font-medium">
+                  Current Company
+                </label>
                 <Input
+                  id="current-company"
                   type="text"
                   placeholder="Tech Corp"
                   value={formData.currentCompany}
@@ -250,8 +269,11 @@ function CandidatesPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Years of Experience</label>
+                <label htmlFor="years-experience" className="text-sm font-medium">
+                  Years of Experience
+                </label>
                 <Input
+                  id="years-experience"
                   type="number"
                   placeholder="5"
                   value={formData.yearsOfExperience}
@@ -260,8 +282,11 @@ function CandidatesPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">CV Skills</label>
+                <label htmlFor="cv-skills" className="text-sm font-medium">
+                  CV Skills
+                </label>
                 <Input
+                  id="cv-skills"
                   type="text"
                   placeholder="Python, JavaScript, React"
                   value={formData.cvSkills}
@@ -270,8 +295,11 @@ function CandidatesPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">English Level</label>
+                <label htmlFor="english-level" className="text-sm font-medium">
+                  English Level
+                </label>
                 <select
+                  id="english-level"
                   value={formData.englishLevel}
                   onChange={(e) => setFormData({ ...formData, englishLevel: e.target.value })}
                   className="mt-1 w-full px-3 py-2 border border-hairline rounded-lg bg-white"
@@ -285,8 +313,11 @@ function CandidatesPage() {
                 </select>
               </div>
               <div>
-                <label className="text-sm font-medium">Salary Expectation</label>
+                <label htmlFor="salary-expectation" className="text-sm font-medium">
+                  Salary Expectation
+                </label>
                 <Input
+                  id="salary-expectation"
                   type="text"
                   placeholder="$1500-$2500"
                   value={formData.salaryExpectation}
@@ -295,8 +326,11 @@ function CandidatesPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Status</label>
+                <label htmlFor="status" className="text-sm font-medium">
+                  Status
+                </label>
                 <select
+                  id="status"
                   value={formData.status}
                   onChange={(e) =>
                     setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })
@@ -326,6 +360,7 @@ function CandidatesPage() {
         <span className="text-sm font-medium">Filter by Status:</span>
         {(['all', 'active', 'inactive'] as const).map((status) => (
           <button
+            type="button"
             key={status}
             onClick={() => setStatusFilter(status)}
             className={`px-3 py-1 rounded text-sm transition ${
@@ -371,37 +406,37 @@ function CandidatesPage() {
                   <div className="grid gap-2 md:grid-cols-3 text-sm">
                     {candidate.currentTitle && (
                       <div>
-                        <label className="font-medium text-ink-subtle">Current Title</label>
+                        <span className="font-medium text-ink-subtle">Current Title</span>
                         <p>{candidate.currentTitle}</p>
                       </div>
                     )}
                     {candidate.currentCompany && (
                       <div>
-                        <label className="font-medium text-ink-subtle">Company</label>
+                        <span className="font-medium text-ink-subtle">Company</span>
                         <p>{candidate.currentCompany}</p>
                       </div>
                     )}
                     {candidate.yearsOfExperience !== undefined && (
                       <div>
-                        <label className="font-medium text-ink-subtle">Experience</label>
+                        <span className="font-medium text-ink-subtle">Experience</span>
                         <p>{candidate.yearsOfExperience} years</p>
                       </div>
                     )}
                     {candidate.englishLevel && (
                       <div>
-                        <label className="font-medium text-ink-subtle">English</label>
+                        <span className="font-medium text-ink-subtle">English</span>
                         <p>{candidate.englishLevel}</p>
                       </div>
                     )}
                     {candidate.salaryExpectation && (
                       <div>
-                        <label className="font-medium text-ink-subtle">Salary</label>
+                        <span className="font-medium text-ink-subtle">Salary</span>
                         <p>{candidate.salaryExpectation}</p>
                       </div>
                     )}
                     {candidate.cvSkills && (
                       <div className="md:col-span-3">
-                        <label className="font-medium text-ink-subtle">Skills</label>
+                        <span className="font-medium text-ink-subtle">Skills</span>
                         <p>{candidate.cvSkills}</p>
                       </div>
                     )}

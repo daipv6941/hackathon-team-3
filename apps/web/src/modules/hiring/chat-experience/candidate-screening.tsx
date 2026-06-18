@@ -168,7 +168,7 @@ export function CandidateScreening({ requestId, jdId: initialJdId }: CandidateSc
         content: `✅ **Shortlist Confirmed!**
 
 Confirmed **${result.shortlistedCandidates.length}** candidates:
-${result.shortlistedCandidates.map((c: any) => `- ${c.candidateName} (${c.fitScore}/100, ${c.recommendation})`).join('\n')}
+${result.shortlistedCandidates.map((c: Record<string, unknown>) => `- ${c.candidateName} (${c.fitScore}/100, ${c.recommendation})`).join('\n')}
 
 Request status updated to **Shortlist Ready**. Ready to proceed with interviews!`,
         type: 'action',

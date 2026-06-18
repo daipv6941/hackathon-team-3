@@ -183,6 +183,15 @@ Ready to screen candidates?`,
       console.log('✅ Screening complete:', result);
 
       // Build detailed report with statistics
+      interface CandidateResult {
+        candidateName: string;
+        fitScore: number;
+        fitSummary: string;
+        interviewQuestions?: string[];
+        followUpQuestions?: string[];
+        rejectReason?: string;
+      }
+
       const stats = result.statistics || {};
       const reportHtml = `
 ## 📊 Shortlist Report
@@ -200,13 +209,13 @@ ${
   (result.passCandidatesList || []).length > 0
     ? `### ✅ PASS Candidates (Ready for Interview)
 
-${(result.passCandidatesList || [])
+${(result.passCandidatesList as CandidateResult[])
   .map(
-    (c: any) => `
+    (c) => `
 **${c.candidateName}** - Score: ${c.fitScore}/100
 - Summary: ${c.fitSummary}
 - Interview Questions:
-${(c.interviewQuestions || []).map((q: string) => `  - ${q}`).join('\n')}
+${(c.interviewQuestions || []).map((q) => `  - ${q}`).join('\n')}
 `,
   )
   .join('\n')}
@@ -218,13 +227,13 @@ ${
   (result.needMoreInfoList || []).length > 0
     ? `### ⚠️ NEED MORE INFO Candidates (Requires Follow-up)
 
-${(result.needMoreInfoList || [])
+${(result.needMoreInfoList as CandidateResult[])
   .map(
-    (c: any) => `
+    (c) => `
 **${c.candidateName}** - Score: ${c.fitScore}/100
 - Summary: ${c.fitSummary}
 - Follow-up Questions:
-${(c.followUpQuestions || []).map((q: string) => `  - ${q}`).join('\n')}
+${(c.followUpQuestions || []).map((q) => `  - ${q}`).join('\n')}
 `,
   )
   .join('\n')}
@@ -236,8 +245,8 @@ ${
   (result.rejectCandidatesList || []).length > 0
     ? `### ❌ REJECT Candidates
 
-${(result.rejectCandidatesList || [])
-  .map((c: any) => `- **${c.candidateName}** (${c.fitScore}/100): ${c.rejectReason}`)
+${(result.rejectCandidatesList as CandidateResult[])
+  .map((c) => `- **${c.candidateName}** (${c.fitScore}/100): ${c.rejectReason}`)
   .join('\n')}
 `
     : ''

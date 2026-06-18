@@ -48,6 +48,7 @@ export function WorkflowSelector() {
       <div className="grid w-full max-w-2xl gap-4 md:grid-cols-2">
         {WORKFLOWS.map((workflow) => (
           <button
+            type="button"
             key={workflow.id}
             onClick={() => handleSelectWorkflow(workflow)}
             className="rounded-lg border border-hairline bg-surface-1 p-6 text-left transition-all hover:border-primary hover:bg-surface-2"
