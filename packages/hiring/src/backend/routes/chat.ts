@@ -96,7 +96,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       const threads = await db
         .select()
         .from(schema.hiringThreads)
-        .where(eq(schema.hiringThreads.user_id, session.user_id as any))
+        .where(eq(schema.hiringThreads.user_id, session.user_id))
         .orderBy(desc(schema.hiringThreads.created_at));
 
       return c.json({ threads });
@@ -184,7 +184,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
           shortlistReport: schema.hiringRequests.shortlist_report,
         })
         .from(schema.hiringRequests)
-        .where(eq(schema.hiringRequests.tenant_id, session.tenant_id as any));
+        .where(eq(schema.hiringRequests.tenant_id, session.tenant_id));
 
       return c.json({ requests });
     } catch (error) {
@@ -221,14 +221,14 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
       // Save JD to database
       await db.insert(schema.hiringJobs).values({
-        tenant_id: '550e8400-e29b-41d4-a716-446655440000' as any,
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         jd_id: jdId,
         request_id: requestId,
         position: 'TBD',
         seniority_level: 'Senior',
         agent_jd_draft_text: jdText,
         jd_full_text: jdText,
-        agent_clarity_score: typeof clarityScore === 'number' ? (clarityScore as any) : (0 as any),
+        agent_clarity_score: typeof clarityScore === 'number' ? clarityScore : 0,
         status: 'Ready',
       });
 
@@ -271,7 +271,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       console.log(`Updating request ${requestId} status to ${status}`);
 
       // Update in database
-      const _result = await db
+      await db
         .update(schema.hiringRequests)
         .set({ request_status: status })
         .where(eq(schema.hiringRequests.request_id, requestId));
@@ -425,7 +425,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         cvId,
         jdId,
         requestId,
-        tenantId: '550e8400-e29b-41d4-a716-446655440000' as any,
+        tenantId: '550e8400-e29b-41d4-a716-446655440000',
         candidateName: candidate.full_name,
         cvSkills: candidate.cv_skills || '',
         yearsOfExperience: candidate.years_of_experience || 0,
@@ -438,22 +438,22 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
       // Save score to shortlist_results table
       await db.insert(schema.hiringShortlistResults).values({
-        tenant_id: '550e8400-e29b-41d4-a716-446655440000' as any,
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         request_id: requestId,
         jd_id: jdId,
         cv_id: cvId,
         candidate_id: candidate.candidate_id,
         candidate_name: candidate.full_name,
-        fit_score: scoreResult.fitScore as any,
-        recommendation: scoreResult.recommendation as any,
+        fit_score: scoreResult.fitScore as unknown as number,
+        recommendation: scoreResult.recommendation as unknown as string,
         confidence: scoreResult.confidence,
         fit_summary: scoreResult.fitSummary,
         gap_summary: scoreResult.gapSummary,
-        category_scores: scoreResult.categoryScores as any,
-        matched_evidence: scoreResult.matchedEvidence as any,
-        flags: scoreResult.flags as any,
-        interview_questions: scoreResult.interviewQuestions as any,
-        follow_up_questions: scoreResult.followUpQuestions as any,
+        category_scores: scoreResult.categoryScores as unknown as Record<string, unknown>,
+        matched_evidence: scoreResult.matchedEvidence as unknown as Record<string, unknown>,
+        flags: scoreResult.flags as unknown as Record<string, unknown>,
+        interview_questions: scoreResult.interviewQuestions as unknown as string[],
+        follow_up_questions: scoreResult.followUpQuestions as unknown as string[],
         reject_reason: scoreResult.rejectReason,
       });
 
@@ -523,7 +523,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
             cvId: candidate.cv_id,
             jdId,
             requestId,
-            tenantId: '550e8400-e29b-41d4-a716-446655440000' as any,
+            tenantId: '550e8400-e29b-41d4-a716-446655440000',
             candidateName: candidate.full_name,
             cvSkills: candidate.cv_skills || '',
             yearsOfExperience: candidate.years_of_experience || 0,
@@ -536,22 +536,22 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
           // Save screening result to shortlist_results table
           await db.insert(schema.hiringShortlistResults).values({
-            tenant_id: '550e8400-e29b-41d4-a716-446655440000' as any,
+            tenant_id: '550e8400-e29b-41d4-a716-446655440000',
             request_id: requestId,
             jd_id: jdId,
             cv_id: candidate.cv_id,
             candidate_id: candidate.candidate_id,
             candidate_name: candidate.full_name,
-            fit_score: scoreResult.fitScore as any,
-            recommendation: scoreResult.recommendation as any,
+            fit_score: scoreResult.fitScore as unknown as number,
+            recommendation: scoreResult.recommendation as unknown as string,
             confidence: scoreResult.confidence,
             fit_summary: scoreResult.fitSummary,
             gap_summary: scoreResult.gapSummary,
-            category_scores: scoreResult.categoryScores as any,
-            matched_evidence: scoreResult.matchedEvidence as any,
-            flags: scoreResult.flags as any,
-            interview_questions: scoreResult.interviewQuestions as any,
-            follow_up_questions: scoreResult.followUpQuestions as any,
+            category_scores: scoreResult.categoryScores as unknown as Record<string, unknown>,
+            matched_evidence: scoreResult.matchedEvidence as unknown as Record<string, unknown>,
+            flags: scoreResult.flags as unknown as Record<string, unknown>,
+            interview_questions: scoreResult.interviewQuestions as unknown as string[],
+            follow_up_questions: scoreResult.followUpQuestions as unknown as string[],
             reject_reason: scoreResult.rejectReason,
           });
 
@@ -680,7 +680,13 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       console.log('✅ Request status updated to "Shortlist Ready":', updateResult);
 
       // Get shortlisted candidates from screening results if IDs provided
-      let shortlistedCandidates: any[] = [];
+      type ShortlistedCandidate = {
+        cvId: string;
+        candidateName: string;
+        fitScore: number;
+        recommendation: string;
+      };
+      let shortlistedCandidates: ShortlistedCandidate[] = [];
       if (candidateIds.length > 0) {
         shortlistedCandidates = await db
           .select({
@@ -823,16 +829,16 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
         await db.insert(schema.hiringThreads).values({
           id: newThreadId,
-          tenant_id: session.tenant_id as any,
-          user_id: session.user_id as any,
+          tenant_id: session.tenant_id,
+          user_id: session.user_id,
           request_id: requestId,
           title: `Hiring - ${context.position}`,
-          context: context as any,
+          context: context as unknown as Record<string, unknown>,
           current_phase: phase || 'initial',
-          metadata: { createdVia: 'chat' } as any,
+          metadata: { createdVia: 'chat' } as unknown as Record<string, unknown>,
         });
 
-        thread = { id: newThreadId } as any;
+        thread = { id: newThreadId } as unknown as typeof thread;
       }
 
       // Get last user message
@@ -842,8 +848,11 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       }
 
       const messageObj = lastMessage as Record<string, unknown>;
+      const parts = messageObj.parts as unknown[];
       const userText =
-        (messageObj.parts as any[])?.[0]?.text || (messageObj as any).content || String(messageObj);
+        ((parts?.[0] as Record<string, unknown>)?.text as string | undefined) ||
+        ((messageObj as Record<string, unknown>).content as string | undefined) ||
+        String(messageObj);
 
       if (!userText) {
         return c.json({ error: 'Empty message' }, 400);
@@ -871,7 +880,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
             });
 
             const context =
-              (threadData?.context as any) ||
+              (threadData?.context as unknown as Record<string, unknown>) ||
               (await fetchContext({
                 requestId,
                 tenantId: session.tenant_id,
@@ -930,7 +939,7 @@ ${jdDraft.draftText}
 
 ${
   scored.clarityScore < 70
-    ? `\n⚠️ **Areas to Improve:**\n${scored.flaggedGaps.map((g: string) => `- ${g}`).join('\n')}`
+    ? `\n⚠️ **Areas to Improve:**\n${(scored.flaggedGaps as unknown as string[]).map((g) => `- ${g}`).join('\n')}`
     : `\n✅ **JD is ready!** All sections meet quality standards.`
 }`;
 
@@ -984,7 +993,7 @@ ${
         candidates = await db
           .select()
           .from(schema.hiringCandidates)
-          .where(eq(schema.hiringCandidates.status, status as any))
+          .where(eq(schema.hiringCandidates.status, status))
           .orderBy(desc(schema.hiringCandidates.created_at));
       } else {
         candidates = await db
@@ -1025,7 +1034,7 @@ ${
   app.post('/v1/candidates', async (c) => {
     try {
       const db = getDb();
-      const body = (await c.req.json()) as Record<string, any>;
+      const body = (await c.req.json()) as Record<string, unknown>;
 
       const cvId = body.cvId as string | undefined;
       const candidateId = body.candidateId as string | undefined;
@@ -1037,7 +1046,7 @@ ${
       const englishLevel = body.englishLevel as string | undefined;
       const salaryExpectation = body.salaryExpectation as string | undefined;
       const cvSummaryByTA = body.cvSummaryByTA as string | undefined;
-      const status = (body.status as string) || 'active';
+      const status = (body.status as string | undefined) || 'active';
 
       if (!cvId || !candidateId || !fullName) {
         return c.json({ error: 'cvId, candidateId, fullName required' }, 400);
@@ -1055,7 +1064,7 @@ ${
       const newCandidate = await db
         .insert(schema.hiringCandidates)
         .values({
-          tenant_id: '550e8400-e29b-41d4-a716-446655440000' as any,
+          tenant_id: '550e8400-e29b-41d4-a716-446655440000',
           cv_id: cvId,
           candidate_id: candidateId,
           full_name: fullName,
@@ -1066,7 +1075,7 @@ ${
           english_level: englishLevel || 'B2',
           salary_expectation: salaryExpectation,
           cv_summary_by_ta: cvSummaryByTA,
-          status: status as any,
+          status,
         })
         .returning();
 
@@ -1074,7 +1083,10 @@ ${
         return c.json({ error: 'Failed to create candidate' }, 500);
       }
 
-      const candidate = newCandidate[0]!;
+      const candidate = newCandidate[0];
+      if (!candidate) {
+        return c.json({ error: 'Failed to retrieve created candidate' }, 500);
+      }
       console.log('✅ Candidate added:', candidate.cv_id);
 
       return c.json({
@@ -1102,7 +1114,7 @@ ${
     try {
       const db = getDb();
       const cvId = c.req.param('cvId');
-      const body = (await c.req.json()) as Record<string, any>;
+      const body = (await c.req.json()) as Record<string, unknown>;
 
       const status = body.status as string | undefined;
       const currentTitle = body.currentTitle as string | undefined;
@@ -1110,7 +1122,8 @@ ${
       const englishLevel = body.englishLevel as string | undefined;
       const salaryExpectation = body.salaryExpectation as string | undefined;
 
-      const updates: any = {};
+      type UpdateData = Record<string, string | Date>;
+      const updates: UpdateData = {};
       if (status) updates.status = status;
       if (currentTitle) updates.current_title = currentTitle;
       if (currentCompany) updates.current_company = currentCompany;
@@ -1132,7 +1145,10 @@ ${
         return c.json({ error: 'Candidate not found' }, 404);
       }
 
-      const candidate = updated[0]!;
+      const candidate = updated[0];
+      if (!candidate) {
+        return c.json({ error: 'Failed to retrieve updated candidate' }, 404);
+      }
       console.log('✅ Candidate updated:', cvId);
 
       return c.json({
