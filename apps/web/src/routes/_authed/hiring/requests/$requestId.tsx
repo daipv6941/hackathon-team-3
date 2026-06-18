@@ -197,11 +197,12 @@ function RequestDetailPage() {
     }
   }, [requestId, loadJd, loadShortlistResults]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ref prevents re-runs on loadRequest changes
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
     loadRequest();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleStatusChange = async (newStatus: string) => {

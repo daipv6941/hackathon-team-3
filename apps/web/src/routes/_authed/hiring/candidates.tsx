@@ -69,11 +69,12 @@ function CandidatesPage() {
     }
   }, [statusFilter]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ref prevents re-runs on loadCandidates changes
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
     loadCandidates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleAddCandidate = async (e: React.FormEvent) => {

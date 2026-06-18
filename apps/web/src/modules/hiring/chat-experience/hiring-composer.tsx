@@ -150,15 +150,13 @@ export function HiringComposer() {
     const savedThreadId = localStorage.getItem('currentThreadId');
     if (savedThreadId && savedThreadId !== threadId && !isLoadingExistingThread) {
       console.log('📂 Loading existing thread:', savedThreadId);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsLoadingExistingThread(true);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setThreadId(savedThreadId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Create new thread when needed
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (
       state.currentPhase === 'initial' &&
@@ -168,6 +166,7 @@ export function HiringComposer() {
       !isLoadingExistingThread
     ) {
       console.log('✅ Creating thread for request:', state.selectedRequestId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       createThread();
     }
   }, [
