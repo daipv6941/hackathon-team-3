@@ -15,6 +15,13 @@
       "when": 1781862600000,
       "tag": "0001_add_benefits",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781867389063,
+      "tag": "0002_dry_lady_deathstrike",
+      "breakpoints": true
     }
   ]
 }

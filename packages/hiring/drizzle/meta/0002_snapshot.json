@@ -1,6 +1,6 @@
 {
-  "id": "63272b02-eb43-4061-97fb-bc45c8f35c6a",
-  "prevId": "48e54193-d050-428a-858a-0def8625dc39",
+  "id": "433de9b9-3fa2-42e0-a880-d95aba482114",
+  "prevId": "0e761869-9b71-4745-92e1-9a985657fd29",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -26,18 +26,6 @@
           "type": "varchar(50)",
           "primaryKey": false,
           "notNull": true
-        },
-        "request_id": {
-          "name": "request_id",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "jd_id": {
-          "name": "jd_id",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": false
         },
         "candidate_id": {
           "name": "candidate_id",
@@ -99,60 +87,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "shortlisted_by": {
-          "name": "shortlisted_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "shortlisted_at": {
-          "name": "shortlisted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "agent_recommendation": {
-          "name": "agent_recommendation",
+        "status": {
+          "name": "status",
           "type": "varchar(20)",
           "primaryKey": false,
-          "notNull": false
-        },
-        "agent_fit_score": {
-          "name": "agent_fit_score",
-          "type": "numeric(5, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent_fit_summary": {
-          "name": "agent_fit_summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent_gap_summary": {
-          "name": "agent_gap_summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent_suggested_questions": {
-          "name": "agent_suggested_questions",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent_shortlist_rank": {
-          "name": "agent_shortlist_rank",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent_screened_at": {
-          "name": "agent_screened_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "'active'"
         },
         "created_at": {
           "name": "created_at",
@@ -508,7 +448,7 @@
           "type": "varchar(20)",
           "primaryKey": false,
           "notNull": true,
-          "default": "'Not Started'"
+          "default": "'New'"
         },
         "agent_jd_draft_text": {
           "name": "agent_jd_draft_text",
@@ -668,6 +608,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "seniority_level": {
+          "name": "seniority_level",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "urgency_level": {
           "name": "urgency_level",
           "type": "varchar(20)",
@@ -699,6 +645,30 @@
           "primaryKey": false,
           "notNull": false
         },
+        "salary_range": {
+          "name": "salary_range",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "work_mode": {
+          "name": "work_mode",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "min_yoe": {
+          "name": "min_yoe",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "english_level_required": {
+          "name": "english_level_required",
+          "type": "varchar(5)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "requesting_manager": {
           "name": "requesting_manager",
           "type": "varchar(255)",
@@ -723,11 +693,23 @@
           "type": "varchar(30)",
           "primaryKey": false,
           "notNull": true,
-          "default": "'Not Started'"
+          "default": "'New'"
         },
         "jd_id": {
           "name": "jd_id",
           "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shortlist_report": {
+          "name": "shortlist_report",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "benefits": {
+          "name": "benefits",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -756,6 +738,149 @@
           "columns": ["request_id"]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "hiring.shortlist_results": {
+      "name": "shortlist_results",
+      "schema": "hiring",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jd_id": {
+          "name": "jd_id",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cv_id": {
+          "name": "cv_id",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "candidate_id": {
+          "name": "candidate_id",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "candidate_name": {
+          "name": "candidate_name",
+          "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fit_score": {
+          "name": "fit_score",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recommendation": {
+          "name": "recommendation",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fit_summary": {
+          "name": "fit_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gap_summary": {
+          "name": "gap_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "category_scores": {
+          "name": "category_scores",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "matched_evidence": {
+          "name": "matched_evidence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "flags": {
+          "name": "flags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "interview_questions": {
+          "name": "interview_questions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "follow_up_questions": {
+          "name": "follow_up_questions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reject_reason": {
+          "name": "reject_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "screened_at": {
+          "name": "screened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

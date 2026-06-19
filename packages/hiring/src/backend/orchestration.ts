@@ -174,6 +174,16 @@ export async function fetchContext(input: z.infer<typeof FetchContextInputSchema
       teamSkillGap: 'Technical skills TBD',
       keyDeliverables: 'TBD',
       salaryRange: 'Competitive',
+      seniorityLevel: 'Senior',
+      urgency: 'Medium',
+      headcount: 1,
+      teamName: 'Engineering',
+      businessContext: '',
+      workMode: 'Hybrid',
+      yoe: '3',
+      englishLevel: 'B2',
+      benefits: '',
+      reportingLine: '',
     };
   }
 
@@ -182,6 +192,16 @@ export async function fetchContext(input: z.infer<typeof FetchContextInputSchema
     teamSkillGap: request.teamSkillGap,
     keyDeliverables: request.keyDeliverables,
     salaryRange: request.salaryRange,
+    seniorityLevel: request.seniorityLevel || 'Senior',
+    urgency: 'Medium',
+    headcount: 1,
+    teamName: request.team || 'Engineering',
+    businessContext: '',
+    workMode: 'Hybrid',
+    yoe: '3',
+    englishLevel: 'B2',
+    benefits: '',
+    reportingLine: '',
   };
 }
 
@@ -225,89 +245,72 @@ HARD RULES (violation = JD rejected)
 6. NO BIAS. Exclude age, gender, family status, religion, appearance, and subjective personality filters ("driven", "young", "energetic").
 
 =========================
-OUTPUT FORMAT
+OUTPUT FORMAT (Follow SETA Template)
 =========================
-# ${input.position}
+## ${input.position} – SETA International
 
-## About the Role
-[2-3 sentences connecting role to BUSINESS_CONTEXT and URGENCY. Reflect criticality if URGENCY=High/Critical.
-No clichés. Focus on tangible impact.]
+### About the Role
+[2-3 sentences connecting role to BUSINESS_CONTEXT and URGENCY.
+If URGENCY=High/Critical, emphasize scale/impact/timeline pressure.
+If URGENCY=Medium/Low, focus on strategic importance.
+No clichés. Focus on tangible business impact.]
 
-## Reporting & Team
-- **Reports to**: [REPORTING_LINE or "[HR to specify: department/manager title]"]
-- **Team**: [TEAM_NAME + context if inferrable; else "[HR to specify: team context]"]
-- **Headcount for this requisition**: ${input.headcount || '[HR to specify]'}
-- **Key collaboration interfaces**: [departments/roles this person works with, inferred from KEY_DELIVERABLES]
-
-## Responsibilities
-[5-7 action-oriented bullets. Each tied to 1 deliverable. Include ownership level:
-- Intern/Junior: execute under guidance, learn, support
+### Responsibilities
+[5-7 action-oriented bullets. Each tied to 1+ deliverable from KEY_DELIVERABLES.
+Adjust language by seniority:
+- Intern/Junior: execute under guidance, support, learn
 - Mid: independent execution, design, mentoring juniors
-- Senior: ownership of domain, architecture, process improvement, mentoring
-- Manager+: strategy, roadmap, hiring, team health
-NO filler like "support the team" or "other duties as assigned".]
+- Senior: ownership of domain, architecture, process improvement, strategic contributions
+- Manager+: strategy, roadmap, hiring, team health, organizational impact
+NO generic filler ("support the team", "other duties", "collaborate")]
 
-## Success Metrics
-[3-4 measurable KPIs inferred from KEY_DELIVERABLES, split by timeline:
-- 90 days: [what success looks like in first 3 months]
-- 12 months: [medium-term outcome]
-Each metric must be quantifiable (%, #, timeline), not subjective.]
+### Must-Have Requirements
+[List ONLY from TEAM_SKILL_GAP or inferred from KEY_DELIVERABLES.
+Format:
+- Skill/Experience: [years/proficiency if from INPUT, else be specific]
+- Technology/Tool: [specific version/variant if relevant]
+- Soft skill: [specific context, not vague]
+Include inline years/levels from INPUT only - NEVER fabricate.
+Example: "3+ years hands-on ML engineering (production, not Kaggle-only)"]
 
-## Must-Have Skills
-[List only skills from TEAM_SKILL_GAP or needed for KEY_DELIVERABLES.
-Include proficiency threshold for each (e.g. "React — 2+ years production") or qualitative if YOE/ENGLISH_LEVEL empty.
-NEVER invent required years or levels.]
+### Nice-to-Have
+[4-5 valuable but optional skills. Explain WHY valuable.
+Example: "LLM fine-tuning: LoRA, QLoRA — accelerates model customization"]
 
-## Nice-to-Have Skills
-[4-5 skills valuable but not required. Clearly separated from must-haves.
-Include why valuable (e.g. "Kubernetes — accelerates deployment architecture review")]
-
-## Requirements
+### Requirements
 - **Years of Experience**: ${input.yoe || '[HR to specify: years in relevant role]'} + seniority-appropriate depth
-- **English Level**: ${input.englishLevel || '[HR to specify: A1-C2 with job-related reason]'} — [explain why job-critical, if applicable]
-- **Work Mode**: ${input.workMode || '[HR to specify: Remote/Hybrid/On-site + details]'}
+- **English Level**: ${input.englishLevel || '[HR to specify: A1-C2]'} [explain why job-critical if applicable]
+- **Work Mode**: ${input.workMode || '[HR to specify: Remote/Hybrid/On-site]'}
 
-## Screening Guide (for recruiters — do not publish)
-[This section helps recruiters screen efficiently without sharing internal logic with candidates.]
-
-### Screen-Out Rules (disqualify immediately if any apply):
-- [2-3 objective, non-negotiable criteria tied to must-haves, e.g., "No production experience with <core tech>"]
-
-### Top-Weighted Evaluation Criteria (for interview design):
-- **Criterion 1** (40%): [most critical skill/experience]
-- **Criterion 2** (30%): [second most critical]
-- **Criterion 3** (20%): [third]
-- **Other factors** (10%): [culture fit, growth mindset, etc.]
-[Sum = 100%]
-
-### Expected Evidence (what candidate must provide):
-- [Portfolio/GitHub/case study if applicable]
-- [Specific project examples or past impact]
-- [Certifications if required]
-
-### Recruiter Checklist (yes/no items):
-□ [Verifiable must-have #1]
-□ [Verifiable must-have #2]
-□ [Domain knowledge signal]
-□ [Growth/learning signal from past role]
-[Use for fast pass/fail in screening interviews.]
-
-## Compensation & Benefits
-- **Salary Range**: ${input.salaryRange}/month
-${input.benefits ? `- ${input.benefits.split('\n').join('\n- ')}` : '- [Per company policy — HR to specify]'}
+### Offer
+- **Salary**: ${input.salaryRange || '[Negotiable]'}${input.workMode ? `\n- **Work Mode**: ${input.workMode}` : ''}
+${
+  input.benefits
+    ? `- **Benefits**:\n${input.benefits
+        .split('\n')
+        .map((b) => `  - ${b}`)
+        .join('\n')}`
+    : '- **Benefits**: [Per company policy — HR to specify]'
+}
 
 =========================
-SELF-CHECK before outputting (mark each ✓ or fix):
+QUALITY CHECKLIST (internal validation — do NOT output):
 =========================
-□ Every YOE number comes from INPUT.yoe (or is "[HR to specify]")?
-□ Every English level comes from INPUT.englishLevel (or is "[HR to specify]")?
-□ Every must-have skill traceable to TEAM_SKILL_GAP or KEY_DELIVERABLES?
-□ Success Metrics quantifiable (%, count, timeline)?
-□ No generic filler ("support", "other duties", repeated phrases)?
-□ No bias language (age, gender, personality adjectives)?
-□ URGENCY/SENIORITY use exact enum values from INPUT?
-□ Screening Guide complete (rules, criteria, evidence, checklist)?
-Proceed only if all ✓. Output Markdown JD only, no explanation.`;
+Before returning the JD, verify:
+✓ Every YOE number comes from INPUT.yoe (or is "[HR to specify]")
+✓ Every English level comes from INPUT.englishLevel (or is "[HR to specify]")
+✓ Every must-have skill traceable to TEAM_SKILL_GAP or KEY_DELIVERABLES
+✓ Success Metrics quantifiable (%, count, timeline)
+✓ No generic filler ("support", "other duties", repeated phrases)
+✓ No bias language (age, gender, personality adjectives)
+✓ URGENCY/SENIORITY use exact enum values from INPUT
+✓ Screening Guide complete (rules, criteria, evidence, checklist)
+
+OUTPUT ONLY: Complete JD in Markdown format. Do not include this checklist or any meta-commentary.`;
+
+  process.stderr.write(
+    `\n📋 DRAFTJD PROMPT (first 1000 chars):\n${prompt.substring(0, 1000)}\n...\n\n`,
+  );
 
   const result = await generateText({
     model,
@@ -317,6 +320,7 @@ Proceed only if all ✓. Output Markdown JD only, no explanation.`;
 
   return {
     draftText: result.text,
+    fullPrompt: prompt,
   };
 }
 
@@ -439,6 +443,8 @@ Return ONLY valid JSON (no markdown, no code blocks):
 JD TEXT TO SCORE:
 ${input.jdText}`;
 
+  console.log('📋 scoreJd finalPrompt:', prompt);
+
   const result = await generateText({
     model,
     prompt,
@@ -461,6 +467,7 @@ ${input.jdText}`;
       flaggedGaps: Array.isArray(parsed.flaggedGaps) ? parsed.flaggedGaps : [],
       requiredRevisions: Array.isArray(parsed.requiredRevisions) ? parsed.requiredRevisions : [],
       confidence: parsed.confidence || 'Medium',
+      fullPrompt: prompt,
     };
   } catch (error) {
     console.error('Failed to parse score response:', error, result.text);
@@ -473,6 +480,7 @@ ${input.jdText}`;
       flaggedGaps: ['JD evaluation failed - please review and resubmit'],
       requiredRevisions: ['Unable to parse scoring - please reformat JD'],
       confidence: 'Low',
+      fullPrompt: prompt,
     };
   }
 }
@@ -502,6 +510,8 @@ TASK:
 
 Return the revised JD with all sections complete.`;
 
+  console.log('📋 reviseJd finalPrompt:', prompt);
+
   const result = await generateText({
     model,
     prompt,
@@ -510,6 +520,7 @@ Return the revised JD with all sections complete.`;
 
   return {
     revisedText: result.text,
+    fullPrompt: prompt,
   };
 }
 
@@ -592,6 +603,8 @@ Return ONLY valid JSON (no markdown, no code blocks):
   "final_decision_reason": "<1-2 sentences>"
 }`;
 
+  console.log('📋 screenCv finalPrompt:', prompt);
+
   const result = await generateText({
     model,
     prompt,
@@ -637,6 +650,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
         recommendation === 'Reject'
           ? parsed.reject_reason || 'Does not meet job requirements'
           : null,
+      fullPrompt: prompt,
     };
   } catch (error) {
     console.error('Failed to parse CV screen response:', error, result.text);
@@ -655,6 +669,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
       gapSummary: 'Unable to fully assess',
       flags: ['Parsing error - manual review recommended'],
       suggestedQuestions: 'Ask about relevant experience',
+      fullPrompt: prompt,
     };
   }
 }
@@ -771,6 +786,7 @@ export interface ExtractedRequestDetails {
   salary_range?: string;
   seniority_level?: string;
   missing_fields: string[];
+  fullPrompt: string;
 }
 
 export async function extractRequestDetails(
@@ -814,6 +830,8 @@ ENUM MAPPING RULES (if source uses different wording, map to enum above):
 
 Return ONLY the JSON object, no other text.`;
 
+  console.log('📋 extractRequestDetails finalPrompt:', prompt);
+
   const result = await generateText({
     model,
     prompt,
@@ -847,6 +865,7 @@ Return ONLY the JSON object, no other text.`;
   return {
     ...extracted,
     missing_fields,
+    fullPrompt: prompt,
   };
 }
 
@@ -883,6 +902,8 @@ Please revise the JD to address the user's feedback while maintaining profession
 
 Return the complete revised JD in markdown format.`;
 
+  console.log('📋 reviseJdWithFeedback finalPrompt:', prompt);
+
   const result = await generateText({
     model,
     prompt,
@@ -891,5 +912,6 @@ Return the complete revised JD in markdown format.`;
 
   return {
     revisedText: result.text,
+    fullPrompt: prompt,
   };
 }

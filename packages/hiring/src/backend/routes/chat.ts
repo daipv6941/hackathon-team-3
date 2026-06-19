@@ -291,6 +291,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       return c.json({
         success: true,
         revisedJdText: result.revisedText,
+        fullPrompt: result.fullPrompt,
       });
     } catch (error) {
       console.error('❌ Revise JD error:', error);
@@ -563,6 +564,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         categoryScores: scoreResult.categoryScores,
         flags: scoreResult.flags,
         suggestedQuestions: scoreResult.suggestedQuestions,
+        fullPrompt: scoreResult.fullPrompt,
       });
     } catch (error) {
       console.error('Score candidate error:', error);
@@ -669,6 +671,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
             categoryScores: scoreResult.categoryScores,
             confidence: scoreResult.confidence,
             flags: scoreResult.flags,
+            fullPrompt: scoreResult.fullPrompt,
           });
         } catch (error) {
           console.error(`Failed to score ${candidate.full_name}:`, error);
@@ -977,34 +980,87 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       return stream(c, async (writer) => {
         try {
           let assistantContent = '';
+          let jdDraft: Awaited<ReturnType<typeof draftJd>> | null = null;
+          let scored: Awaited<ReturnType<typeof scoreJd>> | null = null;
 
           // Handle initial phase - draft JD
           if (phase === 'initial') {
-            const threadData = await db.query.hiringThreads.findFirst({
-              where: eq(schema.hiringThreads.id, thread.id),
+            // Always query DB fresh for latest data (don't use cached thread context)
+            console.log(`🔍 Querying DB for requestId: ${requestId}`);
+            const hiringRequest = await db.query.hiringRequests.findFirst({
+              where: eq(schema.hiringRequests.request_id, requestId),
             });
 
-            const context =
-              (threadData?.context as unknown as Record<string, unknown>) ||
-              (await fetchContext({
-                requestId,
-                tenantId: session.tenant_id,
-              }));
+            if (!hiringRequest) {
+              console.error(`❌ Hiring request ${requestId} not found in database`);
+              await writer.write(
+                `data: ${JSON.stringify({
+                  type: 'error',
+                  content: `❌ Hiring request "${requestId}" not found. Please check the request ID and try again.`,
+                })}\n\n`,
+              );
+              return;
+            }
+
+            console.log(`✓ Found request: ${hiringRequest.position_title}`);
+
+            const context = {
+              position: hiringRequest.position_title,
+              seniorityLevel: hiringRequest.seniority_level || 'Senior',
+              headcount: hiringRequest.headcount_requested || 1,
+              urgency: hiringRequest.urgency_level || 'Medium',
+              teamName: hiringRequest.team_name || 'Engineering',
+              businessContext: hiringRequest.business_justification || '',
+              teamSkillGap: hiringRequest.team_skill_gap_summary || 'Technical skills TBD',
+              keyDeliverables: hiringRequest.key_deliverables || 'TBD',
+              salaryRange: hiringRequest.salary_range || 'Competitive',
+              workMode: hiringRequest.work_mode || 'Hybrid',
+              yoe: hiringRequest.min_yoe?.toString() || '3',
+              englishLevel: hiringRequest.english_level_required || 'B2',
+              benefits: hiringRequest.benefits || '',
+              reportingLine: hiringRequest.requesting_manager || '',
+            };
 
             // Draft JD
-            const jdDraft = await draftJd({
+            const validateSeniority = (
+              val: unknown,
+            ): 'Intern' | 'Junior' | 'Mid' | 'Senior' | 'Manager' | 'C-level' => {
+              const valid = ['Intern', 'Junior', 'Mid', 'Senior', 'Manager', 'C-level'];
+              return valid.includes(val as string)
+                ? (val as 'Intern' | 'Junior' | 'Mid' | 'Senior' | 'Manager' | 'C-level')
+                : 'Senior';
+            };
+            const validateUrgency = (
+              val: unknown,
+            ): 'Low' | 'Medium' | 'High' | 'Critical' | undefined => {
+              const valid = ['Low', 'Medium', 'High', 'Critical'];
+              return valid.includes(val as string)
+                ? (val as 'Low' | 'Medium' | 'High' | 'Critical')
+                : 'Medium';
+            };
+
+            jdDraft = await draftJd({
               jdId: 'JD-001',
               requestId,
               tenantId: session.tenant_id,
               position: context.position as string,
+              seniorityLevel: validateSeniority(context.seniorityLevel),
+              headcount: (context.headcount as number) || 1,
+              urgency: validateUrgency(context.urgency),
+              teamName: context.teamName as string,
+              businessContext: context.businessContext as string,
               teamSkillGap: context.teamSkillGap as string,
               keyDeliverables: context.keyDeliverables as string,
               salaryRange: context.salaryRange as string,
-              seniorityLevel: 'Senior',
+              workMode: context.workMode as string,
+              yoe: context.yoe as string,
+              englishLevel: context.englishLevel as string,
+              benefits: context.benefits as string,
+              reportingLine: context.reportingLine as string,
             });
 
             // Score JD
-            const scored = await scoreJd({
+            scored = await scoreJd({
               jdId: 'JD-001',
               tenantId: session.tenant_id,
               jdText: jdDraft.draftText,
@@ -1066,8 +1122,16 @@ ${
           console.log('✅ Assistant message saved');
 
           // Stream response
+          const metadata: Record<string, string> = {};
+          if (jdDraft) metadata.draftJdPrompt = jdDraft.fullPrompt;
+          if (scored) metadata.scoreJdPrompt = scored.fullPrompt;
+
           await writer.write(
-            `data: ${JSON.stringify({ type: 'complete', content: assistantContent })}\n\n`,
+            `data: ${JSON.stringify({
+              type: 'complete',
+              content: assistantContent,
+              ...(Object.keys(metadata).length > 0 && { metadata }),
+            })}\n\n`,
           );
         } catch (error) {
           console.error('Streaming error:', error);
@@ -1350,6 +1414,7 @@ ${
         position_title,
         team_name,
         urgency_level,
+        seniority_level,
         headcount_requested,
         business_justification,
         team_skill_gap_summary,
@@ -1415,9 +1480,14 @@ ${
       const validUrgencies = ['Low', 'Medium', 'High', 'Critical'];
       const providedUrgency = String(urgency_level || 'Medium');
       if (!validUrgencies.includes(providedUrgency)) {
-        console.warn(
-          `⚠️ Invalid urgency_level "${providedUrgency}", defaulting to "Medium"`,
-        );
+        console.warn(`⚠️ Invalid urgency_level "${providedUrgency}", defaulting to "Medium"`);
+      }
+
+      // Validate seniority level enum
+      const validSeniorityLevels = ['Intern', 'Junior', 'Mid', 'Senior', 'Manager', 'C-level'];
+      const providedSeniority = String(seniority_level || 'Senior');
+      if (!validSeniorityLevels.includes(providedSeniority)) {
+        console.warn(`⚠️ Invalid seniority_level "${providedSeniority}", defaulting to "Senior"`);
       }
 
       // Insert into database
@@ -1426,6 +1496,9 @@ ${
         request_id: requestId,
         position_title: String(position_title),
         team_name: String(team_name),
+        seniority_level: validSeniorityLevels.includes(providedSeniority)
+          ? providedSeniority
+          : 'Senior',
         urgency_level: validUrgencies.includes(providedUrgency) ? providedUrgency : 'Medium',
         headcount_requested: Number(headcount_requested) || 1,
         business_justification: String(business_justification || ''),
@@ -1436,6 +1509,10 @@ ${
         approval_status: 'Pending',
         request_status: 'New',
         benefits: String(benefits || ''),
+        salary_range: String(salary_range || ''),
+        work_mode: String(work_mode || ''),
+        min_yoe: yoe ? Number(yoe) : undefined,
+        english_level_required: String(english_level || ''),
       });
 
       console.log(`✅ Hiring request ${requestId} created successfully`);
