@@ -48,10 +48,19 @@ export const DraftJdInputSchema = z.object({
   requestId: z.string(),
   tenantId: z.string().uuid(),
   position: z.string(),
+  seniorityLevel: z.enum(['Intern', 'Junior', 'Mid', 'Senior', 'Manager', 'C-level']),
+  headcount: z.number().optional(),
+  urgency: z.enum(['Low', 'Medium', 'High', 'Critical']).optional(),
+  teamName: z.string().optional(),
+  businessContext: z.string().optional(),
   teamSkillGap: z.string(),
   keyDeliverables: z.string(),
   salaryRange: z.string(),
-  seniorityLevel: z.string(),
+  workMode: z.string().optional(),
+  yoe: z.string().optional(),
+  englishLevel: z.string().optional(),
+  benefits: z.string().optional(),
+  reportingLine: z.string().optional(),
 });
 
 export const ScoreJdInputSchema = z.object({
@@ -184,40 +193,121 @@ export async function draftJd(input: z.infer<typeof DraftJdInputSchema>) {
 
   const model = openai('gpt-4-turbo');
 
-  const prompt = `You are an expert Technical Recruiter. Create a professional, comprehensive job description.
+  const prompt = `You are an expert Technical Recruiter. Generate a professional, screening-ready Job Description.
+Your output will be evaluated against 8 criteria: Hiring Alignment, Role/Seniority, Skill Accuracy, Deliverables+Metrics, Interview Alignment, Screening Usefulness, Bias/Compliance, Completeness.
 
-POSITION: ${input.position}
-SENIORITY LEVEL: ${input.seniorityLevel}
-TEAM SKILL GAPS: ${input.teamSkillGap}
-KEY DELIVERABLES: ${input.keyDeliverables}
-SALARY RANGE: ${input.salaryRange}
+=========================
+INPUT DATA
+=========================
+POSITION:          ${input.position}
+SENIORITY:         ${input.seniorityLevel}
+HEADCOUNT:         ${input.headcount || '[HR to specify]'}
+URGENCY:           ${input.urgency || '[HR to specify]'}
+TEAM_NAME:         ${input.teamName || '[HR to specify]'}
+BUSINESS_CONTEXT:  ${input.businessContext || '[HR to specify: why this hire, business driver]'}
+TEAM_SKILL_GAP:    ${input.teamSkillGap}
+KEY_DELIVERABLES:  ${input.keyDeliverables}
+SALARY_RANGE:      ${input.salaryRange}/month
+WORK_MODE:         ${input.workMode || '[HR to specify]'}
+YOE:               ${input.yoe || '[HR to specify: years of experience required]'}
+ENGLISH_LEVEL:     ${input.englishLevel || '[HR to specify: A1-C2]'}
+BENEFITS:          ${input.benefits || '[Per company policy — HR to specify]'}
+REPORTING_LINE:    ${input.reportingLine || '[HR to specify]'}
 
-Create a complete JD with these sections:
+=========================
+HARD RULES (violation = JD rejected)
+=========================
+1. NO FABRICATION. Use ONLY data from INPUT. NEVER invent YOE numbers, English levels, salary details, or benefits.
+2. MISSING DATA → PLACEHOLDER. If a field is empty, write: "[HR to specify: <field_name>]"
+3. PRESERVE ENUMS. Keep URGENCY and SENIORITY exactly as provided. No rephrasing (Critical stays Critical, not Immediate).
+4. GENERIC BENEFITS BAN. Only list benefits from input.BENEFITS. If empty, write "[Per company policy — HR to specify]"
+5. TRACEABLE MUST-HAVES. Every must-have skill must originate from TEAM_SKILL_GAP or KEY_DELIVERABLES.
+6. NO BIAS. Exclude age, gender, family status, religion, appearance, and subjective personality filters ("driven", "young", "energetic").
 
+=========================
+OUTPUT FORMAT
+=========================
 # ${input.position}
 
 ## About the Role
-[2-3 sentences about role importance and impact]
+[2-3 sentences connecting role to BUSINESS_CONTEXT and URGENCY. Reflect criticality if URGENCY=High/Critical.
+No clichés. Focus on tangible impact.]
+
+## Reporting & Team
+- **Reports to**: [REPORTING_LINE or "[HR to specify: department/manager title]"]
+- **Team**: [TEAM_NAME + context if inferrable; else "[HR to specify: team context]"]
+- **Headcount for this requisition**: ${input.headcount || '[HR to specify]'}
+- **Key collaboration interfaces**: [departments/roles this person works with, inferred from KEY_DELIVERABLES]
 
 ## Responsibilities
-[5-7 concrete, action-oriented bullets with specific examples]
+[5-7 action-oriented bullets. Each tied to 1 deliverable. Include ownership level:
+- Intern/Junior: execute under guidance, learn, support
+- Mid: independent execution, design, mentoring juniors
+- Senior: ownership of domain, architecture, process improvement, mentoring
+- Manager+: strategy, roadmap, hiring, team health
+NO filler like "support the team" or "other duties as assigned".]
+
+## Success Metrics
+[3-4 measurable KPIs inferred from KEY_DELIVERABLES, split by timeline:
+- 90 days: [what success looks like in first 3 months]
+- 12 months: [medium-term outcome]
+Each metric must be quantifiable (%, #, timeline), not subjective.]
 
 ## Must-Have Skills
-[Specific technical skills with proficiency levels or years required]
+[List only skills from TEAM_SKILL_GAP or needed for KEY_DELIVERABLES.
+Include proficiency threshold for each (e.g. "React — 2+ years production") or qualitative if YOE/ENGLISH_LEVEL empty.
+NEVER invent required years or levels.]
 
 ## Nice-to-Have Skills
-[4-5 optional but valuable skills]
+[4-5 skills valuable but not required. Clearly separated from must-haves.
+Include why valuable (e.g. "Kubernetes — accelerates deployment architecture review")]
 
 ## Requirements
-- **Years of Experience**: [specific number] years
-- **English Level**: [B2/C1/C2 with description]
-- **Work Mode**: [Remote/Hybrid/On-site with details]
+- **Years of Experience**: ${input.yoe || '[HR to specify: years in relevant role]'} + seniority-appropriate depth
+- **English Level**: ${input.englishLevel || '[HR to specify: A1-C2 with job-related reason]'} — [explain why job-critical, if applicable]
+- **Work Mode**: ${input.workMode || '[HR to specify: Remote/Hybrid/On-site + details]'}
+
+## Screening Guide (for recruiters — do not publish)
+[This section helps recruiters screen efficiently without sharing internal logic with candidates.]
+
+### Screen-Out Rules (disqualify immediately if any apply):
+- [2-3 objective, non-negotiable criteria tied to must-haves, e.g., "No production experience with <core tech>"]
+
+### Top-Weighted Evaluation Criteria (for interview design):
+- **Criterion 1** (40%): [most critical skill/experience]
+- **Criterion 2** (30%): [second most critical]
+- **Criterion 3** (20%): [third]
+- **Other factors** (10%): [culture fit, growth mindset, etc.]
+[Sum = 100%]
+
+### Expected Evidence (what candidate must provide):
+- [Portfolio/GitHub/case study if applicable]
+- [Specific project examples or past impact]
+- [Certifications if required]
+
+### Recruiter Checklist (yes/no items):
+□ [Verifiable must-have #1]
+□ [Verifiable must-have #2]
+□ [Domain knowledge signal]
+□ [Growth/learning signal from past role]
+[Use for fast pass/fail in screening interviews.]
 
 ## Compensation & Benefits
 - **Salary Range**: ${input.salaryRange}/month
-- [3-4 specific benefits like insurance, learning budget, etc.]
+${input.benefits ? `- ${input.benefits.split('\n').join('\n- ')}` : '- [Per company policy — HR to specify]'}
 
-Make it professional, specific, and attractive to senior candidates.`;
+=========================
+SELF-CHECK before outputting (mark each ✓ or fix):
+=========================
+□ Every YOE number comes from INPUT.yoe (or is "[HR to specify]")?
+□ Every English level comes from INPUT.englishLevel (or is "[HR to specify]")?
+□ Every must-have skill traceable to TEAM_SKILL_GAP or KEY_DELIVERABLES?
+□ Success Metrics quantifiable (%, count, timeline)?
+□ No generic filler ("support", "other duties", repeated phrases)?
+□ No bias language (age, gender, personality adjectives)?
+□ URGENCY/SENIORITY use exact enum values from INPUT?
+□ Screening Guide complete (rules, criteria, evidence, checklist)?
+Proceed only if all ✓. Output Markdown JD only, no explanation.`;
 
   const result = await generateText({
     model,
@@ -691,6 +781,7 @@ export async function extractRequestDetails(
   const model = openai('gpt-4-turbo');
 
   const prompt = `You are an expert HR recruiter. Extract hiring request information from the following description.
+CRITICAL: Use ONLY the specified enum values. No paraphrasing.
 
 USER DESCRIPTION:
 ${input.description}
@@ -699,14 +790,27 @@ Extract the following information if present. Return a JSON object with these fi
 {
   "position_title": "The job position/title",
   "team_name": "The team or department",
-  "urgency_level": "One of: Immediate, High, Medium, Low (default: Medium)",
-  "headcount_requested": "Number of positions (default: 1)",
-  "business_justification": "Why this hire is needed",
-  "team_skill_gap_summary": "What skills the team is missing",
-  "key_deliverables": "Key responsibilities and deliverables",
-  "salary_range": "Expected salary range",
-  "seniority_level": "One of: Junior, Mid, Senior"
+  "urgency_level": "MUST be one of: Low, Medium, High, Critical (default: Medium)",
+  "headcount_requested": "Number of positions (integer, default: 1)",
+  "business_justification": "Why this hire is needed; business context",
+  "team_skill_gap_summary": "Specific skills the team is missing",
+  "key_deliverables": "Key responsibilities and concrete deliverables",
+  "salary_range": "Expected salary range (e.g., '12M-18M VND/month')",
+  "seniority_level": "MUST be one of: Intern, Junior, Mid, Senior, Manager, C-level"
 }
+
+ENUM MAPPING RULES (if source uses different wording, map to enum above):
+- "Critical/Urgent/ASAP/Immediate" → Critical
+- "High priority/Immediate need" → High
+- "Standard/Regular" → Medium
+- "Low priority/Can wait" → Low
+
+- "Entry/Fresh/New grad" → Intern
+- "1-2 years/Entry-level" → Junior
+- "2-4 years/Mid-level/Intermediate" → Mid
+- "4+ years/Expert/Lead" → Senior
+- "Team lead/Head of/Manager" → Manager
+- "VP/C-level/Executive/CTO/CEO" → C-level
 
 Return ONLY the JSON object, no other text.`;
 
