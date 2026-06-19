@@ -70,7 +70,7 @@ export function ThreadList() {
     }
 
     try {
-      const response = await fetch(`/hiring/v1/threads/${threadId}`, {
+      const response = await fetch(`/api/hiring/v1/threads/${threadId}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -94,7 +94,7 @@ export function ThreadList() {
 
   const handleSelectThread = async (thread: Thread) => {
     try {
-      const response = await fetch(`/hiring/v1/threads/${thread.id}`, {
+      const response = await fetch(`/api/hiring/v1/threads/${thread.id}`, {
         method: 'GET',
         credentials: 'include',
       });

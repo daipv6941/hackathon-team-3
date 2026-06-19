@@ -28,7 +28,7 @@ export function HiringComposer() {
       });
 
       try {
-        console.log('📡 Calling POST /hiring/v1/chat...');
+        console.log('📡 Calling POST /api/hiring/v1/chat...');
         const response = await fetch('/api/hiring/v1/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

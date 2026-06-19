@@ -90,7 +90,7 @@ export function HiringRequestSelector() {
 
       try {
         // Fetch the JD from database
-        const jdResponse = await fetch(`/hiring/v1/jd?requestId=${request.requestId}`, {
+        const jdResponse = await fetch(`/api/hiring/v1/jd?requestId=${request.requestId}`, {
           method: 'GET',
           credentials: 'include',
         });

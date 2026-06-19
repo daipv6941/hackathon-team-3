@@ -137,7 +137,8 @@
       "Bash(xargs kill -9)",
       "Bash(curl -s https://team-3-hackathon.seta-international.com/hiring/v1/requests -H 'Cookie: __Secure-seta.session_token=VSquGJRO0AoPrT1RhXc2ojapaRdHKBZv.c1jCYCVDy0QwO94Zm6nV9Pi26%2Fp0Jxw3uLZ%2BnkUZAok%3D' -H 'Accept: application/json')",
       "Bash(curl -s https://team-3-hackathon.seta-international.com/api/hiring/v1/requests -H 'Cookie: __Secure-seta.session_token=VSquGJRO0AoPrT1RhXc2ojapaRdHKBZv.c1jCYCVDy0QwO94Zm6nV9Pi26%2Fp0Jxw3uLZ%2BnkUZAok%3D' -H 'Accept: application/json')",
-      "Bash(xargs sed -i '' \"s|'/hiring/v1|'/api/hiring/v1|g\")"
+      "Bash(xargs sed -i '' \"s|'/hiring/v1|'/api/hiring/v1|g\")",
+      "Bash(xargs sed -i '' \"s|\\\\`/hiring/v1|\\\\`/api/hiring/v1|g; s|'/hiring/v1|'/api/hiring/v1|g; s|\\\\\"'/hiring/v1|\\\\\"/api/hiring/v1|g\")"
     ],
     "additionalDirectories": [
       "/private/tmp",

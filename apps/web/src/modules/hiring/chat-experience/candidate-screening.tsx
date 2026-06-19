@@ -42,7 +42,7 @@ export function CandidateScreening({ requestId, jdId: initialJdId }: CandidateSc
         setIsLoading(true);
         console.log('📋 Loading candidates for request:', requestId);
 
-        const response = await fetch(`/hiring/v1/candidates/${requestId}`, {
+        const response = await fetch(`/api/hiring/v1/candidates/${requestId}`, {
           method: 'GET',
           credentials: 'include',
         });

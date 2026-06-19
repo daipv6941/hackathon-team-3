@@ -51,7 +51,7 @@ function CandidatesPage() {
       const url =
         statusFilter === 'all'
           ? '/api/hiring/v1/candidates'
-          : `/hiring/v1/candidates?status=${statusFilter}`;
+          : `/api/hiring/v1/candidates?status=${statusFilter}`;
 
       const response = await fetch(url, {
         method: 'GET',
@@ -135,7 +135,7 @@ function CandidatesPage() {
     if (!confirm(`Delete candidate ${cvId}?`)) return;
 
     try {
-      const response = await fetch(`/hiring/v1/candidates/${cvId}`, {
+      const response = await fetch(`/api/hiring/v1/candidates/${cvId}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -153,7 +153,7 @@ function CandidatesPage() {
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
 
     try {
-      const response = await fetch(`/hiring/v1/candidates/${cvId}`, {
+      const response = await fetch(`/api/hiring/v1/candidates/${cvId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
