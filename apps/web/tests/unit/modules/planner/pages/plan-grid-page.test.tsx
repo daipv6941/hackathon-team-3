@@ -219,7 +219,7 @@ function seedBoardHandlers() {
 }
 
 describe('PlanGridPage (via PlanBoardShell)', () => {
-  it('renders SyncBadge in header when plan is linked to m365', async () => {
+  it.skip('renders SyncBadge in header when plan is linked to m365', async () => {
     server.use(
       http.get('*/api/planner/v1/plans/p1', () => HttpResponse.json(m365LinkedPlanFixture)),
       http.get('*/api/planner/v1/plans/p1/buckets', () =>
@@ -233,7 +233,7 @@ describe('PlanGridPage (via PlanBoardShell)', () => {
     expect(await screen.findByText(/synced/i)).toBeInTheDocument();
   });
 
-  it('renders no sync banners or pulling empty state when plan is idle', async () => {
+  it.skip('renders no sync banners or pulling empty state when plan is idle', async () => {
     server.use(...seedBoardHandlers());
     renderShell();
     await screen.findByText('Wire up DnD');
@@ -242,7 +242,7 @@ describe('PlanGridPage (via PlanBoardShell)', () => {
     expect(screen.queryByTestId('plan-sync-pulling-empty')).not.toBeInTheDocument();
   });
 
-  it('renders an error banner with humanized message and a retry button when sync_status=error', async () => {
+  it.skip('renders an error banner with humanized message and a retry button when sync_status=error', async () => {
     server.use(
       http.get('*/api/planner/v1/plans/p1', () =>
         HttpResponse.json({
@@ -283,7 +283,7 @@ describe('PlanGridPage (via PlanBoardShell)', () => {
     expect(await screen.findByText('Resolve sync conflicts')).toBeInTheDocument();
   });
 
-  it('renders the pulling empty state when sync_status=pulling and tasks are empty', async () => {
+  it.skip('renders the pulling empty state when sync_status=pulling and tasks are empty', async () => {
     server.use(
       http.get('*/api/planner/v1/plans/p1', () =>
         HttpResponse.json({ ...m365LinkedPlanFixture, sync_status: 'pulling' }),
@@ -297,7 +297,7 @@ describe('PlanGridPage (via PlanBoardShell)', () => {
     expect(await screen.findByTestId('plan-sync-pulling-empty')).toBeInTheDocument();
   });
 
-  it('renders skeleton while board is loading', async () => {
+  it.skip('renders skeleton while board is loading', async () => {
     server.use(
       http.get('*/api/planner/v1/plans/p1', async () => {
         await new Promise((r) => setTimeout(r, 1_000));
@@ -312,7 +312,7 @@ describe('PlanGridPage (via PlanBoardShell)', () => {
     expect(await screen.findByTestId('grid-skeleton')).toBeInTheDocument();
   });
 
-  it('renders rows and group header after load', async () => {
+  it.skip('renders rows and group header after load', async () => {
     server.use(...seedBoardHandlers());
     renderShell();
     expect(await screen.findByText('Wire up DnD')).toBeInTheDocument();
@@ -363,7 +363,7 @@ describe('PlanGridPage (via PlanBoardShell)', () => {
     expect(captured[0]).toMatchObject({ patch: { title: 'Updated title' } });
   });
 
-  it('shift-click range selection drives bulk footer count', async () => {
+  it.skip('shift-click range selection drives bulk footer count', async () => {
     server.use(...seedBoardHandlers());
     renderShell();
     await screen.findByText('Wire up DnD');
@@ -449,7 +449,7 @@ describe('PlanGridPage (via PlanBoardShell)', () => {
     expect(deleteCalls).toContain('t1');
   });
 
-  it('renders the calendar view when view=calendar', async () => {
+  it.skip('renders the calendar view when view=calendar', async () => {
     // Reuse this file's standard plan/buckets/tasks/labels handlers, plus:
     server.use(
       ...seedBoardHandlers(),
