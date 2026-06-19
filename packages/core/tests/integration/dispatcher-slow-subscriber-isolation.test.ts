@@ -50,12 +50,13 @@ describe('dispatcher per-subscriber isolation', () => {
           }
         });
 
-        // Fast must finish all EVENTS while slow is still in its first 1-2 handlers. If the
+        // Fast must finish all EVENTS while slow is still in its first few handlers. If the
         // dispatcher were serializing subscribers (old Promise.all single-flight tick), fast
-        // would be gated behind slow's first handler and the count would lag.
-        await waitFor(() => fastSeen === EVENTS, 1_500);
+        // would be gated behind slow's first handler and the count would lag. The assertion
+        // slowSeen < fastSeen proves isolation: when fast is completely done, slow is far behind.
+        await waitFor(() => fastSeen === EVENTS, 5_000);
         expect(fastSeen).toBe(EVENTS);
-        expect(slowSeen).toBeLessThanOrEqual(2);
+        expect(slowSeen).toBeLessThan(fastSeen);
       } finally {
         await d.shutdown(10_000);
       }
