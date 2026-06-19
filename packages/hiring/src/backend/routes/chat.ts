@@ -1382,7 +1382,7 @@ ${
         requesting_manager: String(requesting_manager || ''),
         hr_owner: session.user_id as string,
         approval_status: 'Pending',
-        request_status: 'Not Started',
+        request_status: 'New',
       });
 
       console.log(`✅ Hiring request ${requestId} created successfully`);

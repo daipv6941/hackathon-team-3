@@ -27,7 +27,7 @@ export const hiringRequests = hiringSchema.table('requests', {
   requesting_manager: varchar('requesting_manager', { length: 255 }),
   hr_owner: uuid('hr_owner').notNull(), // Identity.user_id of TA
   approval_status: varchar('approval_status', { length: 20 }).notNull().default('Pending'), // Pending, Approved, Rejected
-  request_status: varchar('request_status', { length: 30 }).notNull().default('Not Started'), // Not Started, JD Draft, Shortlisting, Completed
+  request_status: varchar('request_status', { length: 30 }).notNull().default('New'), // New, JD Draft, Shortlisting, Completed
   jd_id: varchar('jd_id', { length: 50 }), // Reference to approved JD
   shortlist_report: jsonb('shortlist_report'), // Complete shortlist report with scores, questions, reasons
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -53,7 +53,7 @@ export const hiringJobs = hiringSchema.table('jobs', {
 
   // JD content & metadata
   jd_full_text: text('jd_full_text'), // Final approved JD (Markdown)
-  status: varchar('status', { length: 20 }).notNull().default('Not Started'), // Not Started, In Draft, Ready
+  status: varchar('status', { length: 20 }).notNull().default('New'), // New, In Draft, Ready
 
   // [AGENT OUTPUT] fields - populated by agent
   agent_jd_draft_text: text('agent_jd_draft_text'), // Draft before TA approval
