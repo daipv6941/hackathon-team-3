@@ -29,7 +29,7 @@ export function HiringComposer() {
 
       try {
         console.log('📡 Calling POST /hiring/v1/chat...');
-        const response = await fetch('http://localhost:3000/hiring/v1/chat', {
+        const response = await fetch('/api/hiring/v1/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -109,7 +109,7 @@ export function HiringComposer() {
 
   const createThread = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:3000/hiring/v1/threads', {
+      const response = await fetch('/api/hiring/v1/threads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -138,7 +138,7 @@ export function HiringComposer() {
     async (data: Record<string, unknown>) => {
       try {
         console.log('💾 Saving hiring request...');
-        const response = await fetch('http://localhost:3000/hiring/v1/requests', {
+        const response = await fetch('/api/hiring/v1/requests', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -297,7 +297,7 @@ export function HiringComposer() {
         setExtractionPhase('extracting');
         console.log('🔍 Extracting hiring request details...');
 
-        const response = await fetch('http://localhost:3000/hiring/v1/requests/extract', {
+        const response = await fetch('/api/hiring/v1/requests/extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -474,7 +474,7 @@ ${data.team_skill_gap_summary || 'TBD'}
       }
 
       // Call real backend API with thread context
-      const response = await fetch('http://localhost:3000/hiring/v1/chat', {
+      const response = await fetch('/api/hiring/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

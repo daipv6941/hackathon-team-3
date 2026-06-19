@@ -50,8 +50,8 @@ function CandidatesPage() {
       setIsLoading(true);
       const url =
         statusFilter === 'all'
-          ? 'http://localhost:3000/hiring/v1/candidates'
-          : `http://localhost:3000/hiring/v1/candidates?status=${statusFilter}`;
+          ? '/api/hiring/v1/candidates'
+          : `/api/hiring/v1/candidates?status=${statusFilter}`;
 
       const response = await fetch(url, {
         method: 'GET',
@@ -82,7 +82,7 @@ function CandidatesPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('http://localhost:3000/hiring/v1/candidates', {
+      const response = await fetch('/api/hiring/v1/candidates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -135,7 +135,7 @@ function CandidatesPage() {
     if (!confirm(`Delete candidate ${cvId}?`)) return;
 
     try {
-      const response = await fetch(`http://localhost:3000/hiring/v1/candidates/${cvId}`, {
+      const response = await fetch(`/api/hiring/v1/candidates/${cvId}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -153,7 +153,7 @@ function CandidatesPage() {
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
 
     try {
-      const response = await fetch(`http://localhost:3000/hiring/v1/candidates/${cvId}`, {
+      const response = await fetch(`/api/hiring/v1/candidates/${cvId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

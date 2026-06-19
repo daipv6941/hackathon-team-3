@@ -130,7 +130,8 @@
       "Bash(pnpm --filter @seta/hiring test)",
       "Bash(git rm *)",
       "Bash(lsof -i :517*)",
-      "Bash(pkill -9 turbo)"
+      "Bash(pkill -9 turbo)",
+      "Bash(xargs sed -i \"\" \"s|http://localhost:3000/hiring/v1|/api/hiring/v1|g\")"
     ],
     "additionalDirectories": [
       "/private/tmp",

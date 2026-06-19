@@ -76,7 +76,7 @@ function RequestsPage() {
     const loadRequests = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch('http://localhost:3000/hiring/v1/requests', {
+        const response = await fetch('/api/hiring/v1/requests', {
           method: 'GET',
           credentials: 'include',
         });

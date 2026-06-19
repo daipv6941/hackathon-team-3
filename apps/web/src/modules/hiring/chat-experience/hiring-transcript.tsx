@@ -100,7 +100,7 @@ function MessageBubble({
       });
 
       // Call API to save JD and update request status
-      const response = await fetch('http://localhost:3000/hiring/v1/jd/approve', {
+      const response = await fetch('/api/hiring/v1/jd/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -163,7 +163,7 @@ Ready to screen candidates?`,
         throw new Error('No JD selected. Please approve a JD first.');
       }
 
-      const response = await fetch('http://localhost:3000/hiring/v1/shortlist/screen-and-report', {
+      const response = await fetch('/api/hiring/v1/shortlist/screen-and-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -286,7 +286,7 @@ ${result.summary}`;
 
       console.log('📤 Submitting feedback for JD revision...');
 
-      const response = await fetch('http://localhost:3000/hiring/v1/jd/revise', {
+      const response = await fetch('/api/hiring/v1/jd/revise', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -474,18 +474,15 @@ ${result.summary}`;
                         });
 
                         console.log('📤 Calling /v1/shortlist/confirm...');
-                        const response = await fetch(
-                          'http://localhost:3000/hiring/v1/shortlist/confirm',
-                          {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            credentials: 'include',
-                            body: JSON.stringify({
-                              requestId: state.selectedRequestId,
-                              selectedCandidateIds: [],
-                            }),
-                          },
-                        );
+                        const response = await fetch('/api/hiring/v1/shortlist/confirm', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({
+                            requestId: state.selectedRequestId,
+                            selectedCandidateIds: [],
+                          }),
+                        });
 
                         console.log('📥 Response status:', response.status, response.statusText);
 
