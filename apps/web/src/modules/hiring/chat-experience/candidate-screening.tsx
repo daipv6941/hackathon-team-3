@@ -87,7 +87,7 @@ export function CandidateScreening({ requestId, jdId: initialJdId }: CandidateSc
       setIsScoring(true);
       console.log('📊 Scoring candidate:', cvId);
 
-      const response = await fetch('/hiring/v1/candidates/score', {
+      const response = await fetch('/api/hiring/v1/candidates/score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -148,7 +148,7 @@ export function CandidateScreening({ requestId, jdId: initialJdId }: CandidateSc
       setIsConfirming(true);
       console.log('📋 Confirming shortlist with candidates:', Array.from(selectedCvIds));
 
-      const response = await fetch('/hiring/v1/shortlist/confirm', {
+      const response = await fetch('/api/hiring/v1/shortlist/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

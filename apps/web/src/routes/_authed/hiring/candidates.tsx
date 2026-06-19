@@ -50,7 +50,7 @@ function CandidatesPage() {
       setIsLoading(true);
       const url =
         statusFilter === 'all'
-          ? '/hiring/v1/candidates'
+          ? '/api/hiring/v1/candidates'
           : `/hiring/v1/candidates?status=${statusFilter}`;
 
       const response = await fetch(url, {
@@ -82,7 +82,7 @@ function CandidatesPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch('/hiring/v1/candidates', {
+      const response = await fetch('/api/hiring/v1/candidates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

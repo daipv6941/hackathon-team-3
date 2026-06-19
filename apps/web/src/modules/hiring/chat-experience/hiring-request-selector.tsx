@@ -26,7 +26,7 @@ export function HiringRequestSelector() {
 
     const loadRequests = async () => {
       try {
-        const response = await fetch('/hiring/v1/requests', {
+        const response = await fetch('/api/hiring/v1/requests', {
           method: 'GET',
           credentials: 'include',
         });

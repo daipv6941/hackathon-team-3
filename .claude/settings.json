@@ -132,7 +132,12 @@
       "Bash(lsof -i :517*)",
       "Bash(pkill -9 turbo)",
       "Bash(xargs sed -i \"\" \"s|http://localhost:3000/hiring/v1|/api/hiring/v1|g\")",
-      "Bash(xargs sed -i \"\" \"s|/api/hiring/v1|/hiring/v1|g\")"
+      "Bash(xargs sed -i \"\" \"s|/api/hiring/v1|/hiring/v1|g\")",
+      "Bash(grep -r \"createFileRoute.*\\\\/$\\\\|createFileRoute.*/$\" /Users/macmini/web/hackathon-team-3/apps/web/src/routes --include=\"index.tsx\")",
+      "Bash(xargs kill -9)",
+      "Bash(curl -s https://team-3-hackathon.seta-international.com/hiring/v1/requests -H 'Cookie: __Secure-seta.session_token=VSquGJRO0AoPrT1RhXc2ojapaRdHKBZv.c1jCYCVDy0QwO94Zm6nV9Pi26%2Fp0Jxw3uLZ%2BnkUZAok%3D' -H 'Accept: application/json')",
+      "Bash(curl -s https://team-3-hackathon.seta-international.com/api/hiring/v1/requests -H 'Cookie: __Secure-seta.session_token=VSquGJRO0AoPrT1RhXc2ojapaRdHKBZv.c1jCYCVDy0QwO94Zm6nV9Pi26%2Fp0Jxw3uLZ%2BnkUZAok%3D' -H 'Accept: application/json')",
+      "Bash(xargs sed -i '' \"s|'/hiring/v1|'/api/hiring/v1|g\")"
     ],
     "additionalDirectories": [
       "/private/tmp",

@@ -23,7 +23,7 @@ export function ThreadList() {
   const loadThreads = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/hiring/v1/threads', {
+      const response = await fetch('/api/hiring/v1/threads', {
         method: 'GET',
         credentials: 'include',
       });

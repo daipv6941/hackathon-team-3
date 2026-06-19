@@ -20,7 +20,7 @@ export function registerHiringContributions(reg: ContributionRegistry): void {
     events: HIRING_EVENTS,
     agentTools: HIRING_AGENT_TOOLS,
     routes: {
-      mountAt: '/hiring',
+      mountAt: '/api/hiring',
       build: (deps: RouteBuildDeps) => {
         // Initialize Mastra runtime
         const mastra = buildMastra({

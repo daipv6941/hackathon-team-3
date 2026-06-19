@@ -161,7 +161,7 @@ function RequestDetailPage() {
     try {
       setIsLoading(true);
       console.log('Loading request:', requestId);
-      const response = await fetch('/hiring/v1/requests', {
+      const response = await fetch('/api/hiring/v1/requests', {
         method: 'GET',
         credentials: 'include',
       });
