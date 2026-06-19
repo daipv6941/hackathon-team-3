@@ -140,12 +140,15 @@
       "Bash(xargs sed -i '' \"s|'/hiring/v1|'/api/hiring/v1|g\")",
       "Bash(xargs sed -i '' \"s|\\\\`/hiring/v1|\\\\`/api/hiring/v1|g; s|'/hiring/v1|'/api/hiring/v1|g; s|\\\\\"'/hiring/v1|\\\\\"/api/hiring/v1|g\")",
       "Bash(pnpm --filter @seta/hiring db:migrate)",
-      "Bash(pkill -f \"apps/server\")"
+      "Bash(pkill -f \"apps/server\")",
+      "Bash(pkill -f \"pnpm\\\\|apps/server\\\\|tsx\")",
+      "Bash(rm /Users/macmini/web/hackathon-team-3/packages/hiring/drizzle/migrations/*.sql *)"
     ],
     "additionalDirectories": [
       "/private/tmp",
       "/Users/macmini/web/hackathon-team-3/apps/web/src/routes/_authed/hiring",
-      "/Users/macmini/web/hackathon-team-3/packages/hiring/drizzle"
+      "/Users/macmini/web/hackathon-team-3/packages/hiring/drizzle",
+      "/Users/macmini/web/hackathon-team-3/packages/hiring/drizzle/migrations"
     ]
   },
   "enabledPlugins": {

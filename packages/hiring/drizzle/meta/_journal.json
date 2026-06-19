@@ -6,42 +6,7 @@
       "idx": 0,
       "version": "7",
       "when": 1781461148804,
-      "tag": "0000_melodic_absorbing_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1781572435487,
-      "tag": "0001_short_speed",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1781748500395,
-      "tag": "0002_long_scourge",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1781751454931,
-      "tag": "0003_charming_black_tom",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1781753811581,
-      "tag": "0004_simple_alex_power",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1781764069082,
-      "tag": "0005_fat_wolfsbane",
+      "tag": "0000_initial",
       "breakpoints": true
     }
   ]
