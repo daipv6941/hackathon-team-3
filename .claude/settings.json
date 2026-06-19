@@ -128,7 +128,9 @@
       "Bash(grep -E \"^d|\\\\.sql$\")",
       "Bash(rm /Users/macmini/web/hackathon-team-3/packages/hiring/drizzle/000[1-5]_*.sql)",
       "Bash(pnpm --filter @seta/hiring test)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(lsof -i :517*)",
+      "Bash(pkill -9 turbo)"
     ],
     "additionalDirectories": [
       "/private/tmp",
