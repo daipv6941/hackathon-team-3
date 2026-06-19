@@ -30,6 +30,7 @@ export const hiringRequests = hiringSchema.table('requests', {
   request_status: varchar('request_status', { length: 30 }).notNull().default('New'), // New, JD Draft, Shortlisting, Completed
   jd_id: varchar('jd_id', { length: 50 }), // Reference to approved JD
   shortlist_report: jsonb('shortlist_report'), // Complete shortlist report with scores, questions, reasons
+  benefits: text('benefits'), // Company benefits offered for this position
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -1304,6 +1304,7 @@ ${
   /**
    * POST /v1/requests/extract
    * Extract hiring request details from user description
+   * Returns extracted fields + missing_fields list for validation
    */
   app.post('/v1/requests/extract', async (c) => {
     try {
@@ -1319,9 +1320,17 @@ ${
 
       console.log('✅ Extraction complete:', extracted);
 
+      // Check if critical fields are missing
+      const hasMissingRequired = extracted.missing_fields && extracted.missing_fields.length > 0;
+
       return c.json({
         success: true,
         extracted,
+        hasMissingRequired,
+        missingFields: extracted.missing_fields || [],
+        message: hasMissingRequired
+          ? `Extracted ${Object.keys(extracted).length - 1} fields, but ${extracted.missing_fields?.length} required fields are missing. Please provide: ${extracted.missing_fields?.join(', ')}`
+          : 'All required fields extracted successfully',
       });
     } catch (error) {
       console.error('❌ Extraction error:', error);
@@ -1331,7 +1340,8 @@ ${
 
   /**
    * POST /v1/requests
-   * Create a new hiring request
+   * Create a new hiring request from extracted or user-provided data
+   * Validates that all required fields are present before creating
    */
   app.post('/v1/requests', async (c) => {
     try {
@@ -1345,15 +1355,44 @@ ${
         team_skill_gap_summary,
         key_deliverables,
         requesting_manager,
+        salary_range,
+        work_mode,
+        yoe,
+        english_level,
+        benefits,
       } = body as Record<string, unknown>;
 
-      // Validate required fields
-      if (!position_title || !team_name || !key_deliverables) {
+      // Validate REQUIRED fields (cannot be empty or null)
+      const requiredFields = {
+        position_title,
+        team_name,
+        key_deliverables,
+      };
+
+      const missingRequired = Object.entries(requiredFields)
+        .filter(([, value]) => !value || (typeof value === 'string' && value.trim() === ''))
+        .map(([key]) => key);
+
+      if (missingRequired.length > 0) {
         return c.json(
-          { error: 'position_title, team_name, and key_deliverables are required' },
+          {
+            error: `Required fields missing: ${missingRequired.join(', ')}`,
+            missingFields: missingRequired,
+          },
           400,
         );
       }
+
+      // Warn about RECOMMENDED fields that are missing but allow creation
+      const recommendedFields = {
+        urgency_level,
+        team_skill_gap_summary,
+        salary_range,
+      };
+
+      const missingRecommended = Object.entries(recommendedFields)
+        .filter(([, value]) => !value || (typeof value === 'string' && value.trim() === ''))
+        .map(([key]) => key);
 
       const session = c.get('session') ?? {
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
@@ -1367,6 +1406,19 @@ ${
       const requestId = `REQ-${timestamp}`;
 
       console.log(`💾 Creating hiring request ${requestId}...`);
+      console.log('📋 Provided fields:', Object.keys(body).join(', '));
+      if (missingRecommended.length > 0) {
+        console.log('⚠️  Missing recommended fields:', missingRecommended.join(', '));
+      }
+
+      // Validate enum values
+      const validUrgencies = ['Low', 'Medium', 'High', 'Critical'];
+      const providedUrgency = String(urgency_level || 'Medium');
+      if (!validUrgencies.includes(providedUrgency)) {
+        console.warn(
+          `⚠️ Invalid urgency_level "${providedUrgency}", defaulting to "Medium"`,
+        );
+      }
 
       // Insert into database
       await db.insert(schema.hiringRequests).values({
@@ -1374,7 +1426,7 @@ ${
         request_id: requestId,
         position_title: String(position_title),
         team_name: String(team_name),
-        urgency_level: String(urgency_level || 'Medium'),
+        urgency_level: validUrgencies.includes(providedUrgency) ? providedUrgency : 'Medium',
         headcount_requested: Number(headcount_requested) || 1,
         business_justification: String(business_justification || ''),
         team_skill_gap_summary: String(team_skill_gap_summary || ''),
@@ -1383,6 +1435,7 @@ ${
         hr_owner: session.user_id as string,
         approval_status: 'Pending',
         request_status: 'New',
+        benefits: String(benefits || ''),
       });
 
       console.log(`✅ Hiring request ${requestId} created successfully`);
@@ -1391,6 +1444,13 @@ ${
         success: true,
         message: `Hiring request ${requestId} created`,
         requestId,
+        warnings:
+          missingRecommended.length > 0
+            ? {
+                missingRecommended,
+                note: `These fields are missing but optional. Consider adding ${missingRecommended.join(', ')} for better JD generation.`,
+              }
+            : undefined,
       });
     } catch (error) {
       console.error('❌ Create request error:', error);
