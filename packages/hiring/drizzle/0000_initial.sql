@@ -17,6 +17,7 @@ CREATE TABLE "hiring"."requests" (
 	"request_status" varchar(30) DEFAULT 'Not Started' NOT NULL,
 	"jd_id" varchar(50),
 	"shortlist_report" jsonb,
+	"benefits" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "requests_request_id_unique" UNIQUE("request_id")
