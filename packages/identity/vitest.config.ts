@@ -26,6 +26,7 @@ export default defineConfig({
   test: {
     ...dbTestDefaults,
     include: ['tests/**/*.test.ts'],
+    exclude: ['tests/integration/**'],
     globalSetup: ['./tests/global-setup.ts'],
   },
 });
