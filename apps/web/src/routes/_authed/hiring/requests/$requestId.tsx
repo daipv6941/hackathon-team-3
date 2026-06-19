@@ -134,7 +134,7 @@ function RequestDetailPage() {
       return;
     }
 
-    const response = await fetch(`/api/hiring/v1/jd/${jdId}`, {
+    const response = await fetch(`/hiring/v1/jd/${jdId}`, {
       method: 'GET',
       credentials: 'include',
     });
@@ -146,7 +146,7 @@ function RequestDetailPage() {
   }, []);
 
   const loadShortlistResults = useCallback(async (rId: string) => {
-    const response = await fetch(`/api/hiring/v1/shortlist/results/${rId}`, {
+    const response = await fetch(`/hiring/v1/shortlist/results/${rId}`, {
       method: 'GET',
       credentials: 'include',
     });
@@ -161,7 +161,7 @@ function RequestDetailPage() {
     try {
       setIsLoading(true);
       console.log('Loading request:', requestId);
-      const response = await fetch('/api/hiring/v1/requests', {
+      const response = await fetch('/hiring/v1/requests', {
         method: 'GET',
         credentials: 'include',
       });
@@ -212,7 +212,7 @@ function RequestDetailPage() {
       setIsUpdating(true);
       console.log(`Updating request ${request.requestId} status to ${newStatus}`);
 
-      const response = await fetch(`/api/hiring/v1/requests/${request.requestId}/status`, {
+      const response = await fetch(`/hiring/v1/requests/${request.requestId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

@@ -131,7 +131,8 @@
       "Bash(git rm *)",
       "Bash(lsof -i :517*)",
       "Bash(pkill -9 turbo)",
-      "Bash(xargs sed -i \"\" \"s|http://localhost:3000/hiring/v1|/api/hiring/v1|g\")"
+      "Bash(xargs sed -i \"\" \"s|http://localhost:3000/hiring/v1|/api/hiring/v1|g\")",
+      "Bash(xargs sed -i \"\" \"s|/api/hiring/v1|/hiring/v1|g\")"
     ],
     "additionalDirectories": [
       "/private/tmp",
