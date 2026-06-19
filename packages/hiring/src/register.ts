@@ -7,6 +7,7 @@ import { buildHiringRoutes } from './backend/http/index.ts';
 import { mountHiringChatRoutes } from './backend/routes/chat.ts';
 import { buildMastra } from './backend/runtime.ts';
 import { HIRING_EVENTS } from './events/index.ts';
+import { hiringRbac } from './rbac.ts';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -15,6 +16,7 @@ export function registerHiringContributions(reg: ContributionRegistry): void {
     name: 'hiring',
     schema,
     migrationsDir: resolve(__dirname, '../drizzle'),
+    rbac: hiringRbac,
     events: HIRING_EVENTS,
     agentTools: HIRING_AGENT_TOOLS,
     routes: {

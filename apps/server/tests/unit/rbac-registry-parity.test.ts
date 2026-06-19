@@ -1,4 +1,5 @@
 import { agentRbac } from '@seta/agent/rbac';
+import { hiringRbac } from '@seta/hiring/rbac';
 import { identityRbac } from '@seta/identity/rbac';
 import { integrationsRbac } from '@seta/integrations/rbac';
 import { knowledgeRbac } from '@seta/knowledge/rbac';
@@ -20,6 +21,7 @@ describe('rbac registry parity', () => {
     integrationsRbac,
     staffingRbac,
     agentRbac,
+    hiringRbac,
     plannerRbac,
     identityRbac,
   ];

@@ -122,11 +122,18 @@
       "Bash(grep -n '<button' /Users/macmini/web/hackathon-team-3/apps/web/src/routes/_authed/hiring/requests/\\\\$requestId.tsx | grep -v 'type=')",
       "Bash(npm exec *)",
       "Bash(npx biome *)",
-      "Bash(/Users/macmini/.nvm/versions/node/v22.13.1/bin/node --version)"
+      "Bash(/Users/macmini/.nvm/versions/node/v22.13.1/bin/node --version)",
+      "Bash(xxd)",
+      "Bash(pnpm add *)",
+      "Bash(grep -E \"^d|\\\\.sql$\")",
+      "Bash(rm /Users/macmini/web/hackathon-team-3/packages/hiring/drizzle/000[1-5]_*.sql)",
+      "Bash(pnpm --filter @seta/hiring test)",
+      "Bash(git rm *)"
     ],
     "additionalDirectories": [
       "/private/tmp",
-      "/Users/macmini/web/hackathon-team-3/apps/web/src/routes/_authed/hiring"
+      "/Users/macmini/web/hackathon-team-3/apps/web/src/routes/_authed/hiring",
+      "/Users/macmini/web/hackathon-team-3/packages/hiring/drizzle"
     ]
   },
   "enabledPlugins": {
