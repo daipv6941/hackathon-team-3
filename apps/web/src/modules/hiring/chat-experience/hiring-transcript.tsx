@@ -90,12 +90,30 @@ function MessageBubble({
         type: 'text',
       });
 
-      // Extract JD content and clarity score from the message
+      // Extract JD content (from action message)
       const jdContent = message.content || '';
-      const metadata = (message.metadata as Record<string, unknown> | undefined) || {};
 
-      // Get clarity score from metadata (preferred) or try to extract from content
-      let clarityScore = metadata.clarityScore as number | undefined;
+      // Find the result message (scoring breakdown) to get clarity score
+      const resultMessage = state.messages.find((msg) => msg.type === 'result');
+      const resultMetadata = (resultMessage?.metadata as Record<string, unknown> | undefined) || {};
+
+      console.log('🔍 Message structure:', {
+        currentMessageType: message.type,
+        currentMessageHasMetadata: !!message.metadata,
+        foundResultMessage: !!resultMessage,
+        resultMetadata: JSON.stringify(resultMetadata),
+      });
+
+      // Get clarity score from result message metadata
+      let clarityScore: number | undefined;
+
+      if (typeof resultMetadata.clarityScore === 'number') {
+        clarityScore = resultMetadata.clarityScore;
+      } else if (resultMetadata.clarityScore) {
+        clarityScore = parseInt(String(resultMetadata.clarityScore), 10);
+      }
+
+      // Fallback: try to extract from content if result message not found
       if (!clarityScore) {
         const clarityMatch = jdContent.match(/Clarity Score:.*?(\d+)\/100/);
         clarityScore = clarityMatch?.[1] ? parseInt(clarityMatch[1], 10) : 0;
@@ -105,10 +123,11 @@ function MessageBubble({
         requestId: state.selectedRequestId,
         clarityScore,
         contentLength: jdContent.length,
-        hasMetadata: !!metadata.clarityScore,
+        hasResultMessage: !!resultMessage,
+        resultMetadataKeys: Object.keys(resultMetadata),
       });
 
-      // Call API to save JD and update request status
+      // Call API to save JD and update request status with full scoring metadata
       const response = await fetch('/api/hiring/v1/jd/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -117,11 +136,12 @@ function MessageBubble({
           requestId: state.selectedRequestId,
           jdText: jdContent,
           clarityScore,
-          categoryScores: metadata.categoryScores,
-          flaggedGaps: metadata.flaggedGaps,
-          requiredRevisions: metadata.requiredRevisions,
-          confidence: metadata.confidence,
-          iterations: metadata.iterations,
+          categoryScores: resultMetadata.categoryScores,
+          flaggedGaps: resultMetadata.flaggedGaps,
+          requiredRevisions: resultMetadata.requiredRevisions,
+          confidence: resultMetadata.confidence,
+          iterations: resultMetadata.iterations,
+          status: resultMetadata.status,
         }),
       });
 
