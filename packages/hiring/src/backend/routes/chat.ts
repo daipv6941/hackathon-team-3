@@ -6,7 +6,13 @@ import { stream } from 'hono/streaming';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import * as schema from '../db/index.ts';
-import { draftJd, extractRequestDetails, fetchContext } from '../orchestration.ts';
+import {
+  draftJd,
+  extractRequestDetails,
+  fetchContext,
+  reviseJd,
+  scoreJd,
+} from '../orchestration.ts';
 
 export interface HiringRouteDeps {
   mastra: Mastra;
@@ -285,21 +291,70 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
       const jdId = `JD-${requestId.replace('REQ-', '')}-${Date.now().toString().slice(-6)}`;
 
-      const jd = await draftJd({
+      let currentJd = await draftJd({
         ...(context as any),
         jdId,
         requestId,
         tenantId: session.tenant_id,
       });
 
+      // Auto-scoring loop: score until >= 80 or max 3 iterations
+      let scoreResult = await scoreJd({
+        jdId,
+        tenantId: session.tenant_id,
+        jdText: currentJd.draftText,
+      });
+
+      let iteration = 1;
+      const maxIterations = 3;
+
+      while (scoreResult.clarityScore < 80 && iteration < maxIterations) {
+        console.log(
+          `📊 Iteration ${iteration}: Score ${scoreResult.clarityScore}/100, revising...`,
+        );
+
+        // Revise based on flagged gaps
+        const revised = await reviseJd({
+          jdId,
+          tenantId: session.tenant_id,
+          currentDraft: currentJd.draftText,
+          flaggedGaps: scoreResult.flaggedGaps || [],
+        });
+
+        currentJd = {
+          draftText: revised.revisedText,
+          fullPrompt: currentJd.fullPrompt,
+        };
+
+        // Re-score the revised JD
+        scoreResult = await scoreJd({
+          jdId,
+          tenantId: session.tenant_id,
+          jdText: currentJd.draftText,
+        });
+
+        iteration++;
+      }
+
+      console.log(
+        `✅ Final Score: ${scoreResult.clarityScore}/100 after ${iteration - 1} iteration(s)`,
+      );
+
       return stream(c, async (writer) => {
         try {
           await writer.write(
             `data: ${JSON.stringify({
               type: 'complete',
-              content: jd.draftText,
+              content: currentJd.draftText,
               metadata: {
-                draftJdPrompt: jd.fullPrompt,
+                draftJdPrompt: currentJd.fullPrompt,
+                clarityScore: scoreResult.clarityScore,
+                status: scoreResult.status,
+                categoryScores: scoreResult.categoryScores,
+                flaggedGaps: scoreResult.flaggedGaps,
+                requiredRevisions: scoreResult.requiredRevisions,
+                confidence: scoreResult.confidence,
+                iterations: iteration - 1,
               },
             })}\n\n`,
           );
