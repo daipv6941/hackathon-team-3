@@ -42,7 +42,10 @@ export function HiringTranscript() {
   }
 
   return (
-    <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+    <div
+      ref={scrollRef}
+      className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 max-w-3xl"
+    >
       {state.messages.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}

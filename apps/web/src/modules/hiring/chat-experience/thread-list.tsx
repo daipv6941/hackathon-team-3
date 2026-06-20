@@ -271,18 +271,18 @@ export function ThreadList() {
                     <button
                       type="button"
                       onClick={() => handleSelectThread(thread)}
-                      className={`flex-1 flex flex-col items-start gap-1 px-3 py-2 text-left text-xs cursor-pointer ${
+                      className={`flex-1 min-w-0 flex flex-col items-start gap-1 px-3 py-2 text-left text-xs cursor-pointer ${
                         currentThreadId === thread.id ? 'text-ink' : 'text-ink-subtle'
                       }`}
                     >
-                      <div className="flex w-full items-center gap-2">
+                      <div className="flex w-full items-center gap-2 min-w-0">
                         <MessageSquare className="h-3 w-3 flex-shrink-0" />
                         <span className="truncate font-medium flex-1">{thread.title}</span>
-                        <span className="text-xs text-ink-subtler flex-shrink-0">
+                        <span className="text-xs text-ink-subtler flex-shrink-0 whitespace-nowrap">
                           {formatDate(thread.created_at)}
                         </span>
                       </div>
-                      <div className="pl-5 text-xs text-ink-subtler">
+                      <div className="pl-5 text-xs text-ink-subtler truncate w-full">
                         {thread.request_id} • {thread.current_phase}
                       </div>
                     </button>
