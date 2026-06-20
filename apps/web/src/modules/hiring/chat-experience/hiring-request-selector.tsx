@@ -34,16 +34,13 @@ export function HiringRequestSelector() {
         if (!response.ok) throw new Error('Failed to load requests');
         const data = await response.json();
 
-        // Filter based on selected flow
         let availableRequests: HiringRequest[];
         if (state.selectedFlow === 'cv-shortlist') {
-          // For CV screening flow: show requests with JD Approved or CV Screening status
           availableRequests = (data.requests || []).filter(
             (r: HiringRequest) =>
               r.requestStatus === 'JD Approved' || r.requestStatus === 'CV Screening',
           );
         } else {
-          // For JD draft flow: show New or JD Draft requests
           availableRequests = (data.requests || []).filter(
             (r: HiringRequest) => r.requestStatus === 'New' || r.requestStatus === 'JD Draft',
           );
@@ -63,33 +60,72 @@ export function HiringRequestSelector() {
 
   const handleSelectRequest = async (request: HiringRequest) => {
     setSelectedId(request.id);
-
-    // Clear old thread ID when starting NEW request workflow
-    localStorage.removeItem('currentThreadId');
+    const threadId = localStorage.getItem('currentThreadId');
 
     actions.setSelectedRequest(request.requestId);
 
-    // Proceed with selected request
-    actions.addMessage({
-      role: 'user',
+    const userMessage = {
+      role: 'user' as const,
       content: `Selected: ${request.requestId} — ${request.positionTitle}`,
-      type: 'text',
-    });
+      type: 'text' as const,
+    };
+    actions.addMessage(userMessage);
 
-    // Check if this is CV screening flow
-    if (state.selectedFlow === 'cv-shortlist') {
-      // For CV screening: load the saved JD and show it
-      actions.addMessage({
-        role: 'assistant',
+    if (threadId) {
+      await fetch('/api/hiring/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ threadId, ...userMessage }),
+      }).catch((e) => console.error('Failed to save user message:', e));
+    }
+
+    const selectedFlow =
+      (localStorage.getItem('selectedFlow') as 'jd-draft' | 'cv-shortlist') || 'jd-draft';
+    actions.setSelectedFlow(selectedFlow);
+
+    if (selectedFlow === 'cv-shortlist') {
+      const assistantMsg = {
+        role: 'assistant' as const,
         content: `✅ Great! I'll screen candidates for **${request.requestId}**: ${request.positionTitle}\n\nLoading the approved JD...`,
-        type: 'action',
-      });
+        type: 'action' as const,
+      };
+      actions.addMessage(assistantMsg);
+
+      if (threadId) {
+        await fetch('/api/hiring/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ threadId, ...assistantMsg }),
+        }).catch((e) => console.error('Failed to save assistant message:', e));
+      }
 
       actions.setPhase('jd-approval');
+    } else {
+      const assistantMsg = {
+        role: 'assistant' as const,
+        content: `✅ Great! I'll work with **${request.requestId}**: ${request.positionTitle}\n\nTeam: ${request.teamName}\n\nGenerating job description...`,
+        type: 'action' as const,
+      };
+      actions.addMessage(assistantMsg);
+
+      if (threadId) {
+        await fetch('/api/hiring/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ threadId, ...assistantMsg }),
+        }).catch((e) => console.error('Failed to save assistant message:', e));
+      }
+
+      actions.setPhase('initial');
+    }
+
+    if (selectedFlow === 'cv-shortlist') {
       actions.setLoading(true);
 
       try {
-        // Fetch the JD from database
         const jdResponse = await fetch(`/api/hiring/v1/jd?requestId=${request.requestId}`, {
           method: 'GET',
           credentials: 'include',
@@ -107,13 +143,12 @@ export function HiringRequestSelector() {
         const jdId = jdData.jd.jdId;
         actions.setSelectedJob(jdId);
 
-        // Display the saved JD with the approval format
         const jdContent = jdData.jd.jdFullText || '';
-        actions.addMessage({
-          role: 'assistant',
+        const jdMsg = {
+          role: 'assistant' as const,
           content: `✅ **JD Approved & Saved!**
 
-Your JD has been approved and saved to the system. The hiring request is now in **JD Approved** status.
+Your JD has been approved and saved to the system.
 
 **Next steps:**
 1. Review the approved JD
@@ -125,52 +160,114 @@ Ready to screen candidates?
 ---
 
 ${jdContent}`,
-          type: 'action',
-        });
+          type: 'action' as const,
+        };
+        actions.addMessage(jdMsg);
+
+        if (threadId) {
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ threadId, ...jdMsg }),
+          }).catch((e) => console.error('Failed to save JD message:', e));
+        }
       } catch (error) {
         console.error('Screening error:', error);
-        actions.addMessage({
-          role: 'assistant',
+        const errorMsg = {
+          role: 'assistant' as const,
           content: '❌ Failed to load JD. Please try again.',
-          type: 'text',
-        });
+          type: 'text' as const,
+        };
+        actions.addMessage(errorMsg);
+
+        if (threadId) {
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ threadId, ...errorMsg }),
+          }).catch((e) => console.error('Failed to save error message:', e));
+        }
       } finally {
         actions.setLoading(false);
       }
-    } else {
-      // For JD draft: show normal flow
-      actions.addMessage({
-        role: 'assistant',
-        content: `✅ Great! I'll work with **${request.requestId}**: ${request.positionTitle}\n\nTeam: ${request.teamName}\n\nLet me fetch the business context, team skill gaps, and headcount plan...`,
-        type: 'action',
-      });
-
-      // Advance to initial phase to start the workflow
-      actions.setPhase('initial');
     }
   };
 
-  const handleCreateNew = () => {
+  const handleCreateNew = async () => {
     setSelectedId('new');
-    actions.addMessage({
-      role: 'user',
+    const threadId = localStorage.getItem('currentThreadId');
+
+    const userMsg = {
+      role: 'user' as const,
       content: 'Create a new hiring request',
-      type: 'text',
-    });
+      type: 'text' as const,
+    };
+    actions.addMessage(userMsg);
 
-    actions.addMessage({
-      role: 'assistant',
+    if (threadId) {
+      await fetch('/api/hiring/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ threadId, ...userMsg }),
+      }).catch((e) => console.error('Failed to save message:', e));
+    }
+
+    const assistantMsg = {
+      role: 'assistant' as const,
       content: `📝 Perfect! I'll help you create a new hiring request.\n\nPlease describe the hiring request in detail. Tell me about:\n- The position and team\n- Why you're hiring\n- Key responsibilities and deliverables\n- Team skill gaps\n- Seniority level\n- Salary range\n- Headcount and urgency\n\nThe more details you provide, the better I can extract the information!\n\n**Go ahead, describe your hiring need:**`,
-      type: 'action',
-    });
+      type: 'action' as const,
+    };
+    actions.addMessage(assistantMsg);
 
-    // Mark that we're in the creation flow
+    if (threadId) {
+      await fetch('/api/hiring/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ threadId, ...assistantMsg }),
+      }).catch((e) => console.error('Failed to save message:', e));
+    }
+
     actions.setSelectedRequest('creating');
+  };
+
+  const handleDeleteThread = async (threadId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (!confirm('Are you sure you want to delete this conversation?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/hiring/v1/threads/${threadId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete thread');
+
+      setRequests(requests.filter((t) => t.id !== threadId));
+
+      const currentThreadId = localStorage.getItem('currentThreadId');
+      if (currentThreadId === threadId) {
+        actions.clearMessages();
+        localStorage.removeItem('currentThreadId');
+      }
+    } catch (error) {
+      console.error('Delete request error:', error);
+      alert('Failed to delete request');
+    }
+  };
+
+  const handleSelectId = (id: string) => {
+    setSelectedId(id);
   };
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Existing requests */}
       <div>
         <p className="mb-2 text-xs font-semibold text-ink-subtle">
           {state.selectedFlow === 'cv-shortlist'
@@ -189,7 +286,10 @@ ${jdContent}`,
               <button
                 type="button"
                 key={request.id}
-                onClick={() => handleSelectRequest(request)}
+                onClick={() => {
+                  handleSelectRequest(request);
+                  handleSelectId(request.id);
+                }}
                 className={`rounded-lg border p-3 text-left transition-all ${
                   selectedId === request.id
                     ? 'border-primary bg-primary/5'
@@ -214,7 +314,6 @@ ${jdContent}`,
         </div>
       </div>
 
-      {/* Create new */}
       <div className="border-t border-hairline pt-4">
         <p className="mb-2 text-xs font-semibold text-ink-subtle">OR CREATE NEW</p>
         <button
@@ -231,7 +330,7 @@ ${jdContent}`,
             <span className="text-sm font-semibold">Create a new hiring request</span>
           </div>
           <p className="mt-1 text-xs text-ink-subtle">
-            Answer a few questions and I\'ll set it up for you
+            Answer a few questions and I'll set it up for you
           </p>
         </button>
       </div>

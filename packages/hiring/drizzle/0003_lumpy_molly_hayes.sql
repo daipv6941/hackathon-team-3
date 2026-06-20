@@ -1,0 +1,1 @@
+ALTER TABLE "hiring"."threads" ALTER COLUMN "request_id" DROP NOT NULL;

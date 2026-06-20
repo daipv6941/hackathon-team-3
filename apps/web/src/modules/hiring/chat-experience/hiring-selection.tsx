@@ -1,34 +1,97 @@
 'use client';
 
 import { FileText, Users } from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { useHiringChat } from './use-hiring-chat';
 
 export function HiringSelection() {
   const { actions } = useHiringChat();
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSelectFlow = (flow: 'jd-draft' | 'cv-shortlist') => {
-    // Clear any old thread from previous workflow
-    localStorage.removeItem('currentThreadId');
+  const handleSelectFlow = useCallback(
+    async (flow: 'jd-draft' | 'cv-shortlist') => {
+      try {
+        setIsLoading(true);
+        console.log('🎯 handleSelectFlow called with:', flow);
 
-    actions.setSelectedFlow(flow);
-    actions.setPhase('initial');
+        // Call backend to create thread
+        console.log('🔄 Calling POST /api/hiring/v1/threads...');
+        const response = await fetch('/api/hiring/v1/threads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            flow,
+            initialMessage:
+              flow === 'jd-draft'
+                ? "📋 Great! Let's create a job description."
+                : "👥 Perfect! Let's screen and shortlist candidates.",
+          }),
+        });
 
-    if (flow === 'jd-draft') {
-      actions.addMessage({
-        role: 'assistant',
-        content:
-          "📋 Great! Let's create a job description.\n\nI'll help you:\n1. Fetch context from your hiring request\n2. Draft the JD based on your requirements\n3. Score the clarity and completeness\n4. Get your approval\n5. Screen CVs against it\n\n**Please select a hiring request to proceed:**",
-        type: 'action',
-      });
-    } else {
-      actions.addMessage({
-        role: 'assistant',
-        content:
-          "👥 Perfect! Let's screen and shortlist candidates.\n\nI'll help you:\n1. Load the approved JD\n2. Score each CV against your requirements\n3. Rank candidates by fit\n4. Generate a summary report\n5. Confirm your final shortlist\n\n**Please select a hiring request with an approved JD:**",
-        type: 'action',
-      });
-    }
-  };
+        console.log('📥 Response status:', response.status, response.ok);
+
+        if (!response.ok) {
+          throw new Error(`Failed to create thread: ${response.status}`);
+        }
+
+        const data = (await response.json()) as { threadId: string };
+        console.log('✅ Thread created:', data.threadId);
+
+        // Save threadId & flow to localStorage
+        localStorage.setItem('currentThreadId', data.threadId);
+        localStorage.setItem('selectedFlow', flow);
+
+        // Set flow and messages
+        actions.setSelectedFlow(flow);
+        actions.setPhase('selection');
+
+        if (flow === 'jd-draft') {
+          const detailedMsg = {
+            role: 'assistant' as const,
+            content:
+              "📋 Great! Let's create a job description.\n\nI'll help you:\n1. Fetch context from your hiring request\n2. Draft the JD based on your requirements\n3. Score the clarity and completeness\n4. Get your approval\n5. Screen CVs against it\n\n**Please select a hiring request to proceed:**",
+            type: 'action' as const,
+          };
+          actions.addMessage(detailedMsg);
+
+          // Save detailed message to database
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ threadId: data.threadId, ...detailedMsg }),
+          }).catch((e) => console.error('Failed to save detailed message:', e));
+        } else {
+          const detailedMsg = {
+            role: 'assistant' as const,
+            content:
+              "👥 Perfect! Let's screen and shortlist candidates.\n\nI'll help you:\n1. Load the approved JD\n2. Score each CV against your requirements\n3. Rank candidates by fit\n4. Generate a summary report\n5. Confirm your final shortlist\n\n**Please select a hiring request with an approved JD:**",
+            type: 'action' as const,
+          };
+          actions.addMessage(detailedMsg);
+
+          // Save detailed message to database
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ threadId: data.threadId, ...detailedMsg }),
+          }).catch((e) => console.error('Failed to save detailed message:', e));
+        }
+      } catch (error) {
+        console.error('Failed to start workflow:', error);
+        actions.addMessage({
+          role: 'assistant',
+          content: '❌ Failed to start workflow. Please try again.',
+          type: 'text',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [actions],
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 p-4">
@@ -42,7 +105,8 @@ export function HiringSelection() {
         <button
           type="button"
           onClick={() => handleSelectFlow('jd-draft')}
-          className="group rounded-lg border border-hairline bg-surface-1 p-6 transition-all hover:border-primary hover:bg-surface-2"
+          disabled={isLoading}
+          className="group rounded-lg border border-hairline bg-surface-1 p-6 transition-all hover:border-primary hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <div className="flex flex-col items-start gap-3">
             <div className="rounded-lg bg-primary/10 p-3 group-hover:bg-primary/20">
@@ -69,7 +133,8 @@ export function HiringSelection() {
         <button
           type="button"
           onClick={() => handleSelectFlow('cv-shortlist')}
-          className="group rounded-lg border border-hairline bg-surface-1 p-6 transition-all hover:border-primary hover:bg-surface-2"
+          disabled={isLoading}
+          className="group rounded-lg border border-hairline bg-surface-1 p-6 transition-all hover:border-primary hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <div className="flex flex-col items-start gap-3">
             <div className="rounded-lg bg-primary/10 p-3 group-hover:bg-primary/20">
