@@ -1,5 +1,5 @@
 import { openai } from '@ai-sdk/openai';
-import { generateText } from 'ai';
+import { generateText, streamText } from 'ai';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import * as schema from './db/index.ts';
@@ -88,6 +88,26 @@ export const ScreenCvInputSchema = z.object({
   yearsOfExperience: z.number(),
   englishLevel: z.string(),
   salaryExpectation: z.string(),
+  jdMustHave: z.string(),
+  jdNiceToHave: z.string(),
+  jdMinYoe: z.number(),
+});
+
+export const BatchScreenCandidatesInputSchema = z.object({
+  jdId: z.string(),
+  requestId: z.string(),
+  tenantId: z.string().uuid(),
+  candidates: z.array(
+    z.object({
+      cv_id: z.string(),
+      candidate_id: z.string(),
+      full_name: z.string(),
+      cv_skills: z.string().optional(),
+      years_of_experience: z.number().optional(),
+      english_level: z.string().optional(),
+      salary_expectation: z.string().optional(),
+    }),
+  ),
   jdMustHave: z.string(),
   jdNiceToHave: z.string(),
   jdMinYoe: z.number(),
@@ -368,6 +388,66 @@ OUTPUT ONLY: Complete JD in Markdown format. Do not include this checklist or an
 }
 
 /**
+ * Stream JD draft with reasoning tokens
+ */
+export async function* draftJdStream(input: z.infer<typeof DraftJdInputSchema>) {
+  console.log('draftJdStream:', input);
+
+  const model = openai('gpt-4-turbo');
+
+  const prompt = `You are a Recruiting Manager tasked with creating a Professional Job Description.
+
+HIRING CONTEXT:
+- Position: ${input.position}
+- Seniority Level: ${input.seniorityLevel}
+- Headcount: ${input.headcount || 1}
+- Urgency: ${input.urgency || 'Medium'}
+- Team: ${input.teamName || 'Engineering'}
+- Business Context: ${input.businessContext || 'Not provided'}
+
+KEY CONTEXT:
+- Team Skill Gap: ${input.teamSkillGap}
+- Key Deliverables: ${input.keyDeliverables}
+
+REQUIREMENTS:
+- Salary Range: ${input.salaryRange}
+- Work Mode: ${input.workMode || 'Hybrid'}
+- Years of Experience: ${input.yoe || '3'}+
+- English Level: ${input.englishLevel || 'B2'}
+
+Generate a professional, screening-ready Job Description for this role.`;
+
+  const stream = streamText({
+    model,
+    prompt,
+    temperature: 0.7,
+  });
+
+  let fullText = '';
+
+  for await (const chunk of stream.fullStream) {
+    if (chunk.type === 'text-delta') {
+      fullText += chunk.text;
+      yield { type: 'text', content: chunk.text };
+    } else if (chunk.type === 'reasoning-start') {
+      yield { type: 'thinking-start', content: '' };
+    } else if (chunk.type === 'reasoning-end') {
+      yield { type: 'thinking-end', content: '' };
+    }
+  }
+
+  // Yield complete with full text
+  yield {
+    type: 'complete',
+    content: 'text',
+    data: {
+      draftText: fullText,
+      fullPrompt: prompt,
+    },
+  };
+}
+
+/**
  * Score JD using Claude/OpenAI
  */
 export async function scoreJd(input: z.infer<typeof ScoreJdInputSchema>) {
@@ -524,6 +604,138 @@ ${input.jdText}`;
       requiredRevisions: ['Unable to parse scoring - please reformat JD'],
       confidence: 'Low',
       fullPrompt: prompt,
+    };
+  }
+}
+
+/**
+ * Stream score JD with reasoning tokens and collect full response
+ */
+export async function* scoreJdStream(input: z.infer<typeof ScoreJdInputSchema>) {
+  console.log('scoreJdStream:', input);
+
+  const model = openai('gpt-4-turbo');
+
+  const prompt = `You are an expert Recruiter evaluating Job Descriptions using the JD Quality Scoring Guide v3.
+
+SCORING FRAMEWORK (100 points total across 8 categories):
+
+## REQUIRED CATEGORIES & POINTS:
+
+1. **Hiring Request Alignment (20 points)**
+   - Role Purpose Alignment (4 pts): Does JD reflect the stated hiring need?
+   - Business Context Reflection (4 pts): Does JD show understanding of business goals?
+   - Urgency Alignment (3 pts): Does JD reflect stated urgency level?
+   - Internal Role Positioning (3 pts): Does JD position role well within team structure?
+   - Compensation Clarity (3 pts): Are compensation expectations clearly outlined?
+
+2. **Role Clarity & Seniority Alignment (15 points)**
+   - Clear Seniority Level (5 pts): Is seniority level unmistakable?
+   - Role Definition (5 pts): Is the core purpose of the role explicitly clear?
+   - Team Integration (5 pts): Is the role's place in team hierarchy clear?
+
+3. **Skill Accuracy (20 points)**
+   - Must-Have Skills Definition (7 pts): Are required skills specific and testable?
+   - Nice-to-Have Skills (5 pts): Are optional enhancements realistic?
+   - Technical Depth (5 pts): Is technical level appropriate for seniority?
+   - Outdated/Contradictory Skills (3 pts): No conflicting or obsolete requirements?
+
+4. **Key Deliverables & Metrics (15 points)**
+   - Measurable Outcomes (7 pts): Are deliverables quantifiable?
+   - Realistic Scope (5 pts): Can deliverables be achieved in standard tenure?
+   - Impact Focus (3 pts): Do deliverables show business value?
+
+5. **Interview Preparation Usefulness (10 points)**
+   - Interview Question Suitability (5 pts): Can interviewers generate quality questions?
+   - Red Flags Definition (3 pts): Are deal-breakers defined?
+   - Culture Fit Clarity (2 pts): Are team values/working style conveyed?
+
+6. **Screening Usefulness (10 points)**
+   - CV Screening Clarity (5 pts): Can recruiters screen candidates efficiently?
+   - Filter Criteria (3 pts): Are screening criteria unambiguous?
+   - Keyword Optimization (2 pts): Keywords present for ATS search?
+
+7. **Bias & Compliance (5 points)**
+   - No Age/Gender Bias (3 pts): Is language neutral and professional?
+   - Legal Compliance (2 pts): No discriminatory requirements?
+
+8. **Completeness (5 points)**
+   - Full Section Coverage (3 pts): All standard sections present?
+   - Formatting & Clarity (2 pts): Professional presentation?
+
+RESPOND ONLY WITH VALID JSON (no markdown, no code blocks):
+{
+  "clarityScore": <0-100>,
+  "status": "<Ready|Minor Revision|Needs Revision|Weak>",
+  "hardFail": <boolean>,
+  "hardFailReason": <null or string>,
+  "categoryScores": {
+    "hiringAlignment": <0-20>,
+    "roleAlignment": <0-15>,
+    "skillAccuracy": <0-20>,
+    "deliverables": <0-15>,
+    "interviewAlignment": <0-10>,
+    "screeningUsefulness": <0-10>,
+    "biasCompliance": <0-5>,
+    "completeness": <0-5>
+  },
+  "flaggedGaps": ["gap1", "gap2", "..."],
+  "requiredRevisions": ["revision1", "revision2", "..."],
+  "confidence": "<High|Medium|Low>"
+}
+
+JD TEXT TO SCORE:
+${input.jdText}`;
+
+  console.log('📋 scoreJdStream finalPrompt:', prompt);
+
+  const stream = streamText({
+    model,
+    prompt,
+    temperature: 0.5,
+  });
+
+  let fullText = '';
+
+  for await (const chunk of stream.fullStream) {
+    if (chunk.type === 'text-delta') {
+      fullText += chunk.text;
+      yield { type: 'text', content: chunk.text };
+    } else if (chunk.type === 'reasoning-start') {
+      yield { type: 'thinking-start', content: '' };
+    } else if (chunk.type === 'reasoning-end') {
+      yield { type: 'thinking-end', content: '' };
+    }
+  }
+
+  // Parse the collected text
+  try {
+    const cleanedText = fullText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+    const parsed = JSON.parse(cleanedText);
+    yield {
+      type: 'complete',
+      content: 'parsed',
+      data: {
+        clarityScore: Math.min(100, Math.max(0, parsed.clarityScore || 0)),
+        status: parsed.status || 'Needs Revision',
+        hardFail: parsed.hardFail || false,
+        hardFailReason: parsed.hardFailReason || null,
+        categoryScores: parsed.categoryScores || {},
+        flaggedGaps: Array.isArray(parsed.flaggedGaps) ? parsed.flaggedGaps : [],
+        requiredRevisions: Array.isArray(parsed.requiredRevisions) ? parsed.requiredRevisions : [],
+        confidence: parsed.confidence || 'Medium',
+        fullPrompt: prompt,
+      },
+    };
+  } catch (error) {
+    console.error('Failed to parse score response:', error, fullText);
+    yield {
+      type: 'error',
+      content: 'parse-error',
+      message: 'Unable to parse scoring result',
     };
   }
 }
@@ -957,4 +1169,104 @@ Return the complete revised JD in markdown format.`;
     revisedText: result.text,
     fullPrompt: prompt,
   };
+}
+
+/**
+ * Batch screen all candidates against JD in one call with streaming
+ */
+export async function* batchScreenCandidatesStream(
+  input: z.infer<typeof BatchScreenCandidatesInputSchema>,
+) {
+  console.log('batchScreenCandidatesStream:', {
+    jdId: input.jdId,
+    candidateCount: input.candidates.length,
+  });
+
+  const model = openai('gpt-4-turbo');
+
+  const candidatesText = input.candidates
+    .map(
+      (c) =>
+        `- ${c.full_name} (${c.cv_id}): ${c.cv_skills || 'N/A'}, ${c.years_of_experience || 0}yoe, English ${c.english_level || 'B2'}, Salary: ${c.salary_expectation || 'Negotiable'}`,
+    )
+    .join('\n');
+
+  const prompt = `You are an expert recruiter. Screen these ${input.candidates.length} candidates against the JD requirements.
+
+JD REQUIREMENTS:
+- Must Have Skills: ${input.jdMustHave}
+- Nice to Have: ${input.jdNiceToHave}
+- Min Years of Experience: ${input.jdMinYoe}
+
+CANDIDATES:
+${candidatesText}
+
+For EACH candidate, analyze fit and respond ONLY with valid JSON array (no markdown):
+[
+  {
+    "cvId": "CV-XXX",
+    "candidateName": "Name",
+    "fitScore": 0-100,
+    "recommendation": "Pass|Reject|Need More Info",
+    "fitSummary": "Brief fit summary",
+    "gapSummary": "Key gaps if any",
+    "categoryScores": {
+      "mustHaveSkills": 0-25,
+      "relevantExperience": 0-25,
+      "languageLevel": 0-25,
+      "niceToHaveSkills": 0-25
+    },
+    "matchedEvidence": ["evidence1", "evidence2"],
+    "flags": ["flag1", "flag2"],
+    "interviewQuestions": ["q1", "q2"],
+    "followUpQuestions": ["q1", "q2"],
+    "rejectReason": "Reason if rejecting"
+  },
+  ...
+]`;
+
+  console.log('📋 batchScreenCandidatesStream prompt:', prompt.substring(0, 200) + '...');
+
+  const stream = streamText({
+    model,
+    prompt,
+    temperature: 0.5,
+  });
+
+  let fullText = '';
+
+  for await (const chunk of stream.fullStream) {
+    if (chunk.type === 'text-delta') {
+      fullText += chunk.text;
+      yield { type: 'text', content: chunk.text };
+    } else if (chunk.type === 'reasoning-start') {
+      yield { type: 'thinking-start', content: '' };
+    } else if (chunk.type === 'reasoning-end') {
+      yield { type: 'thinking-end', content: '' };
+    }
+  }
+
+  // Parse the collected text
+  try {
+    const cleanedText = fullText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+    const parsed = JSON.parse(cleanedText);
+    yield {
+      type: 'complete',
+      content: 'parsed',
+      data: {
+        results: Array.isArray(parsed) ? parsed : [parsed],
+        fullPrompt: prompt,
+      },
+    };
+  } catch (error) {
+    console.error('Failed to parse batch screening response:', error, fullText);
+    yield {
+      type: 'error',
+      content: 'parse-error',
+      message: 'Unable to parse screening result',
+    };
+  }
 }

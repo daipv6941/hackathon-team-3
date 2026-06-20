@@ -18,6 +18,42 @@ interface ScoringBreakdownMetadata {
   iterations?: number;
 }
 
+interface ScoredCandidate {
+  cvId: string;
+  candidateName: string;
+  fitScore: number;
+  recommendation: 'Pass' | 'Reject' | 'Need More Info';
+  fitSummary: string;
+  gapSummary: string;
+  categoryScores: Record<string, number>;
+  matchedEvidence: string[];
+  flags: string[];
+  interviewQuestions: string[];
+  followUpQuestions: string[];
+  rejectReason: string;
+}
+
+interface BatchScreeningResult {
+  type: 'result';
+  content: string;
+  metadata: {
+    reportId: string;
+    requestId: string;
+    jdId: string;
+    position: string;
+    totalCandidates: number;
+    statistics: {
+      passCandidates: number;
+      passPercentage: number;
+      needMoreInfoCandidates: number;
+      needMoreInfoPercentage: number;
+      rejectCandidates: number;
+      rejectPercentage: number;
+    };
+    scoredCandidates: ScoredCandidate[];
+  };
+}
+
 export function HiringTranscript() {
   const { state } = useHiringChat();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -219,25 +255,61 @@ Ready to screen candidates?`,
 
       if (!response.ok) throw new Error('Failed to screen candidates');
 
-      const result = await response.json();
-      console.log('✅ Screening complete:', result);
+      // Stream response from batch screening
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response stream');
 
-      // Build detailed report with statistics
-      interface CandidateResult {
-        candidateName: string;
-        fitScore: number;
-        fitSummary: string;
-        interviewQuestions?: string[];
-        followUpQuestions?: string[];
-        rejectReason?: string;
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let reportData: BatchScreeningResult | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6)) as BatchScreeningResult;
+              // Only collect result messages from batch screening
+              if (data.type === 'result' && data.metadata) {
+                reportData = data;
+              }
+            } catch (e) {
+              console.error('Failed to parse screening stream:', e);
+            }
+          }
+        }
       }
 
+      if (!reportData?.metadata) {
+        throw new Error('No screening results returned');
+      }
+
+      const result = reportData.metadata;
+      console.log('✅ Screening complete:', result);
+
       const stats = result.statistics || {};
+      const candidates = result.scoredCandidates || [];
+
+      // Categorize candidates
+      const passCandidates = candidates.filter((c: ScoredCandidate) => c.recommendation === 'Pass');
+      const needMoreInfoCandidates = candidates.filter(
+        (c: ScoredCandidate) => c.recommendation === 'Need More Info',
+      );
+      const rejectCandidates = candidates.filter(
+        (c: ScoredCandidate) => c.recommendation === 'Reject',
+      );
+
       const reportHtml = `
 ## 📊 Shortlist Report
 
-**Position:** ${result.position}
-**Total Candidates:** ${stats.totalCandidates || result.totalCandidates}
+**Position:** ${result.position || 'TBD'}
+**Total Candidates:** ${result.totalCandidates}
 
 ### 📈 Summary by Recommendation
 
@@ -246,16 +318,16 @@ Ready to screen candidates?`,
 - **❌ REJECT (${stats.rejectPercentage || 0}%)**: ${stats.rejectCandidates || 0} candidates
 
 ${
-  (result.passCandidatesList || []).length > 0
+  passCandidates.length > 0
     ? `### ✅ PASS Candidates (Ready for Interview)
 
-${(result.passCandidatesList as CandidateResult[])
+${passCandidates
   .map(
-    (c) => `
+    (c: ScoredCandidate) => `
 **${c.candidateName}** - Score: ${c.fitScore}/100
 - Summary: ${c.fitSummary}
 - Interview Questions:
-${(c.interviewQuestions || []).map((q) => `  - ${q}`).join('\n')}
+${(c.interviewQuestions || []).map((q: string) => `  - ${q}`).join('\n')}
 `,
   )
   .join('\n')}
@@ -264,16 +336,16 @@ ${(c.interviewQuestions || []).map((q) => `  - ${q}`).join('\n')}
 }
 
 ${
-  (result.needMoreInfoList || []).length > 0
+  needMoreInfoCandidates.length > 0
     ? `### ⚠️ NEED MORE INFO Candidates (Requires Follow-up)
 
-${(result.needMoreInfoList as CandidateResult[])
+${needMoreInfoCandidates
   .map(
-    (c) => `
+    (c: ScoredCandidate) => `
 **${c.candidateName}** - Score: ${c.fitScore}/100
 - Summary: ${c.fitSummary}
 - Follow-up Questions:
-${(c.followUpQuestions || []).map((q) => `  - ${q}`).join('\n')}
+${(c.followUpQuestions || []).map((q: string) => `  - ${q}`).join('\n')}
 `,
   )
   .join('\n')}
@@ -282,22 +354,21 @@ ${(c.followUpQuestions || []).map((q) => `  - ${q}`).join('\n')}
 }
 
 ${
-  (result.rejectCandidatesList || []).length > 0
+  rejectCandidates.length > 0
     ? `### ❌ REJECT Candidates
 
-${(result.rejectCandidatesList as CandidateResult[])
-  .map((c) => `- **${c.candidateName}** (${c.fitScore}/100): ${c.rejectReason}`)
+${rejectCandidates
+  .map((c: ScoredCandidate) => `- **${c.candidateName}** (${c.fitScore}/100): ${c.rejectReason}`)
   .join('\n')}
 `
     : ''
-}
-
-${result.summary}`;
+}`;
 
       actions.addMessage({
         role: 'assistant',
         content: reportHtml,
         type: 'action',
+        metadata: result,
       });
 
       actions.setPhase('confirmation');
@@ -443,10 +514,9 @@ ${result.summary}`;
         {/* Show action buttons for JD approval or other actions */}
         {!isUser && showActions && message.type === 'action' && (
           <>
-            {/* JD Approval buttons - show for JD drafts */}
+            {/* JD Approval buttons - show for JD drafts with requiresApproval flag */}
             {(state.currentPhase === 'initial' || state.currentPhase === 'jd-approval') &&
-              (String(message.content).includes('Clarity Score') ||
-                String(message.content).includes('## ')) && (
+              (message.metadata as Record<string, unknown> | undefined)?.requiresApproval && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button size="sm" variant="default" onClick={handleApprove} className="gap-1">
                     <ThumbsUp className="h-3 w-3" />

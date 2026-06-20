@@ -56,8 +56,8 @@ export function HiringComposer() {
 
         const decoder = new TextDecoder();
         let buffer = '';
-        const messages: Array<{
-          role: string;
+        const finalMessages: Array<{
+          role: 'user' | 'assistant';
           content: string;
           type: string;
           metadata?: Record<string, unknown>;
@@ -75,17 +75,34 @@ export function HiringComposer() {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                console.log('📨 Received message:', {
-                  type: data.type,
-                  hasContent: !!data.content,
-                });
 
-                // Collect messages from stream (action: JD, result: scoring)
-                if (data.type === 'action' || data.type === 'result') {
-                  messages.push({
+                // Ignore thinking and text tokens - just log them
+                if (data.type === 'text') {
+                  console.log('📝 Token received');
+                } else if (data.type === 'thinking-start') {
+                  console.log('🧠 Reasoning started');
+                } else if (data.type === 'thinking-end') {
+                  console.log('🧠 Reasoning ended');
+                }
+
+                // Collect final action and result messages only
+                if (data.type === 'action') {
+                  console.log('📨 JD action message received');
+                  finalMessages.push({
                     role: 'assistant',
                     content: data.content,
-                    type: data.type,
+                    type: 'action' as const,
+                    metadata: {
+                      ...data.metadata,
+                      requiresApproval: true, // Flag for UI to show approve/feedback buttons
+                    },
+                  });
+                } else if (data.type === 'result') {
+                  console.log('📨 Scoring result message received');
+                  finalMessages.push({
+                    role: 'assistant',
+                    content: data.content,
+                    type: 'result' as const,
                     metadata: data.metadata,
                   });
                 }
@@ -97,7 +114,7 @@ export function HiringComposer() {
         }
 
         // Add both messages to state and save to database
-        for (const msg of messages) {
+        for (const msg of finalMessages) {
           console.log(`✅ Adding ${msg.type} message to state`);
           actions.addMessage(
             msg as {
