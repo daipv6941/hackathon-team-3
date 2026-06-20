@@ -57,9 +57,19 @@ export function HiringComposer() {
         const decoder = new TextDecoder();
         let buffer = '';
         const messages: Array<{
-          role: string;
+          role: 'user' | 'assistant';
           content: string;
           type: string;
+          metadata?: Record<string, unknown>;
+        }> = [];
+        let streamingTokens = '';
+        let draftJdContent = '';
+        let scoringContent = '';
+        let phase: 'generating' | 'scoring' | 'complete' = 'generating';
+        const allMessages: Array<{
+          role: 'user' | 'assistant';
+          content: string;
+          type?: 'text' | 'action' | 'result';
           metadata?: Record<string, unknown>;
         }> = [];
 
@@ -75,17 +85,58 @@ export function HiringComposer() {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                console.log('📨 Received message:', {
-                  type: data.type,
-                  hasContent: !!data.content,
-                });
 
-                // Collect messages from stream (action: JD, result: scoring)
-                if (data.type === 'action' || data.type === 'result') {
+                // Collect text tokens for streaming display
+                if (data.type === 'text') {
+                  streamingTokens += data.content || '';
+                  if (phase === 'generating') {
+                    draftJdContent = streamingTokens;
+                  } else if (phase === 'scoring') {
+                    scoringContent = streamingTokens;
+                  }
+
+                  // Update messages with streaming content
+                  allMessages.length = 0;
+                  if (draftJdContent) {
+                    allMessages.push({
+                      role: 'assistant',
+                      content: draftJdContent,
+                      type: 'text',
+                    });
+                  }
+                  if (scoringContent) {
+                    allMessages.push({
+                      role: 'assistant',
+                      content: scoringContent,
+                      type: 'text',
+                    });
+                  }
+                  actions.setMessages(allMessages);
+                } else if (data.type === 'thinking-start') {
+                  console.log('🧠 Reasoning started');
+                } else if (data.type === 'thinking-end') {
+                  console.log('🧠 Reasoning ended');
+                }
+
+                // Collect final messages from stream
+                if (data.type === 'action') {
+                  console.log('📨 JD action message received');
+                  phase = 'scoring';
                   messages.push({
                     role: 'assistant',
                     content: data.content,
-                    type: data.type,
+                    type: 'action' as const,
+                    metadata: data.metadata,
+                  });
+                  draftJdContent = '';
+                  streamingTokens = '';
+                } else if (data.type === 'result') {
+                  console.log('📨 Scoring result message received');
+                  phase = 'complete';
+                  messages.push({
+                    role: 'assistant',
+                    content: data.content,
+                    type: 'result' as const,
                     metadata: data.metadata,
                   });
                 }

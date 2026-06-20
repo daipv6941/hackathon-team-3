@@ -174,7 +174,15 @@
       "Bash(pkill -f \"tsx\")",
       "Bash(curl -X POST http://localhost:3000/api/hiring/v1/shortlist/screen-and-report -H 'Content-Type: application/json' -d '{\"requestId\":\"REQ-590018\",\"jdId\":\"JD-590018-172107\"}')",
       "Bash(curl -X POST http://localhost:3000/api/hiring/v1/shortlist/screen-and-report -H 'Content-Type: application/json' -H 'Authorization: Bearer test' -d '{\"requestId\":\"REQ-590018\",\"jdId\":\"JD-590018-172107\"}')",
-      "Bash(pnpm --filter @seta/web lint:hiring)"
+      "Bash(pnpm --filter @seta/web lint:hiring)",
+      "Bash(pkill -f \"node.*apps/server\\\\|node.*apps/web\\\\|vite\")",
+      "Bash(pnpm --filter @seta/web dev)",
+      "Bash(bash -c 'nvm use 24.17.0 && pnpm --filter @seta/server dev')",
+      "Bash(bash -c 'nvm use 24.17.0 && pnpm --filter @seta/web dev')",
+      "Bash(bash -c 'nvm use 24.17.0 && pnpm lint')",
+      "Bash(pnpm test *)",
+      "Bash(pnpm run *)",
+      "Bash(curl -s http://localhost:8000/health)"
     ],
     "additionalDirectories": [
       "/private/tmp",

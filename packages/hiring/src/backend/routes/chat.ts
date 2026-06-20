@@ -8,10 +8,12 @@ import { z } from 'zod';
 import * as schema from '../db/index.ts';
 import {
   draftJd,
+  draftJdStream,
   extractRequestDetails,
   fetchContext,
   reviseJd,
   scoreJd,
+  scoreJdStream,
   screenCv,
 } from '../orchestration.ts';
 
@@ -292,93 +294,133 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
       const jdId = `JD-${requestId.replace('REQ-', '')}-${Date.now().toString().slice(-6)}`;
 
-      let currentJd = await draftJd({
-        ...(context as any),
-        jdId,
-        requestId,
-        tenantId: session.tenant_id,
-      });
+      return stream(c, async (writer) => {
+        try {
+          console.log('🎬 Starting streaming JD generation and scoring...');
 
-      // Auto-scoring loop: score until >= 80 or max 3 iterations
-      let scoreResult = await scoreJd({
-        jdId,
-        tenantId: session.tenant_id,
-        jdText: currentJd.draftText,
-      });
+          // Stream 1: Draft JD with reasoning
+          console.log('📝 Streaming draft JD...');
+          let currentJdText = '';
+          let draftPrompt = '';
 
-      let iteration = 1;
-      const maxIterations = 3;
+          for await (const chunk of draftJdStream({
+            ...(context as any),
+            jdId,
+            requestId,
+            tenantId: session.tenant_id,
+          })) {
+            if (
+              chunk.type === 'text' ||
+              chunk.type === 'thinking-start' ||
+              chunk.type === 'thinking-end'
+            ) {
+              // Stream thinking tokens to client
+              await writer.write(`data: ${JSON.stringify(chunk)}\n\n`);
+            } else if (chunk.type === 'complete' && chunk.data) {
+              currentJdText = (chunk.data as any).draftText;
+              draftPrompt = (chunk.data as any).fullPrompt;
+            }
+          }
 
-      while (scoreResult.clarityScore < 80 && iteration < maxIterations) {
-        console.log(
-          `📊 Iteration ${iteration}: Score ${scoreResult.clarityScore}/100, revising...`,
-        );
+          console.log('✅ Draft JD complete');
 
-        // Revise based on flagged gaps
-        const revised = await reviseJd({
-          jdId,
-          tenantId: session.tenant_id,
-          currentDraft: currentJd.draftText,
-          flaggedGaps: scoreResult.flaggedGaps || [],
-        });
+          // Auto-scoring loop: score until >= 80 or max 3 iterations
+          let scoreResult: any = null;
+          let iteration = 1;
+          const maxIterations = 3;
 
-        currentJd = {
-          draftText: revised.revisedText,
-          fullPrompt: currentJd.fullPrompt,
-        };
+          while (!scoreResult || (scoreResult.clarityScore < 80 && iteration < maxIterations)) {
+            console.log(`📊 Iteration ${iteration}: Scoring...`);
 
-        // Re-score the revised JD
-        scoreResult = await scoreJd({
-          jdId,
-          tenantId: session.tenant_id,
-          jdText: currentJd.draftText,
-        });
+            // Stream scoring with reasoning
+            for await (const chunk of scoreJdStream({
+              jdId,
+              tenantId: session.tenant_id,
+              jdText: currentJdText,
+            })) {
+              if (
+                chunk.type === 'text' ||
+                chunk.type === 'thinking-start' ||
+                chunk.type === 'thinking-end'
+              ) {
+                // Stream thinking tokens to client
+                await writer.write(`data: ${JSON.stringify(chunk)}\n\n`);
+              } else if (chunk.type === 'complete' && chunk.data) {
+                scoreResult = chunk.data as any;
+              } else if (chunk.type === 'error') {
+                console.error('Scoring error:', (chunk as any).message);
+                scoreResult = {
+                  clarityScore: 0,
+                  status: 'Error',
+                  categoryScores: {},
+                  flaggedGaps: ['Scoring failed'],
+                  requiredRevisions: [],
+                  confidence: 'Low',
+                };
+              }
+            }
 
-        iteration++;
-      }
+            if (scoreResult.clarityScore < 80 && iteration < maxIterations) {
+              console.log(
+                `📊 Iteration ${iteration}: Score ${scoreResult.clarityScore}/100, revising...`,
+              );
 
-      console.log(
-        `✅ Final Score: ${scoreResult.clarityScore}/100 after ${iteration - 1} iteration(s)`,
-      );
+              const revised = await reviseJd({
+                jdId,
+                tenantId: session.tenant_id,
+                currentDraft: currentJdText,
+                flaggedGaps: scoreResult.flaggedGaps || [],
+              });
 
-      // Prepare messages to stream
-      const jdMessage = {
-        type: 'action',
-        content: currentJd.draftText,
-        metadata: {
-          draftJdPrompt: currentJd.fullPrompt,
-        },
-      };
+              currentJdText = revised.revisedText;
+              iteration++;
+            } else {
+              break;
+            }
+          }
 
-      const scoringContent = `## 📊 Quality Assessment
+          console.log(
+            `✅ Final Score: ${scoreResult.clarityScore}/100 after ${iteration - 1} iteration(s)`,
+          );
+
+          // Prepare final messages
+          const jdMessage = {
+            type: 'action',
+            content: currentJdText,
+            metadata: {
+              draftJdPrompt: draftPrompt,
+            },
+          };
+
+          const scoringContent = `## 📊 Quality Assessment
 
 **Clarity Score: ${scoreResult.clarityScore}/100** — ${scoreResult.status}
 
 Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scoreResult.confidence} confidence)`;
 
-      const scoringMessage = {
-        type: 'result',
-        content: scoringContent,
-        metadata: {
-          clarityScore: scoreResult.clarityScore,
-          status: scoreResult.status,
-          categoryScores: scoreResult.categoryScores,
-          flaggedGaps: scoreResult.flaggedGaps,
-          requiredRevisions: scoreResult.requiredRevisions,
-          confidence: scoreResult.confidence,
-          iterations: iteration - 1,
-        },
-      };
+          const scoringMessage = {
+            type: 'result',
+            content: scoringContent,
+            metadata: {
+              clarityScore: scoreResult.clarityScore,
+              status: scoreResult.status,
+              categoryScores: scoreResult.categoryScores,
+              flaggedGaps: scoreResult.flaggedGaps,
+              requiredRevisions: scoreResult.requiredRevisions,
+              confidence: scoreResult.confidence,
+              iterations: iteration - 1,
+            },
+          };
 
-      return stream(c, async (writer) => {
-        try {
-          // Stream Message 1: JD Content
+          // Stream final messages
+          console.log('📤 Streaming final messages...');
           await writer.write(`data: ${JSON.stringify(jdMessage)}\n\n`);
-
-          // Stream Message 2: Scoring Breakdown
           await writer.write(`data: ${JSON.stringify(scoringMessage)}\n\n`);
         } catch (error) {
           console.error('Stream error:', error);
+          await writer.write(
+            `data: ${JSON.stringify({ type: 'error', content: 'Stream processing failed' })}\n\n`,
+          );
         }
       });
     } catch (error) {
