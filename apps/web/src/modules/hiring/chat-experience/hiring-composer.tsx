@@ -2,7 +2,7 @@
 
 import { Button, Input } from '@seta/shared-ui';
 import { Send } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useHiringChat } from './use-hiring-chat';
 
 type NewRequestData = Record<string, string>;
@@ -14,6 +14,8 @@ export function HiringComposer() {
   const [isLoadingExistingThread, setIsLoadingExistingThread] = useState(false);
   const triggeredThreadsRef = useRef<Set<string>>(new Set());
   const prevPhaseRef = useRef<string | null>(null);
+  const loadedFlowRef = useRef<string | null>(null);
+  const prevThreadIdRef = useRef<string | null>(null);
   const [extractionPhase, setExtractionPhase] = useState<
     'initial-prompt' | 'extracting' | 'collected-summary' | 'completed'
   >('initial-prompt');
@@ -21,11 +23,11 @@ export function HiringComposer() {
 
   const triggerInitialPhaseWorkflow = useCallback(
     async (tid: string, requestData?: Partial<NewRequestData>) => {
-      actions.setLoading(true);
       console.log('🎬 triggerInitialPhaseWorkflow called with:', {
         tid,
         selectedRequestId: state.selectedRequestId,
       });
+      actions.setLoading(true);
 
       try {
         console.log('📡 Calling POST /api/hiring/v1/chat...');
@@ -38,7 +40,6 @@ export function HiringComposer() {
             messages: [{ content: 'Start JD creation' }],
             requestId: state.selectedRequestId,
             phase: 'initial',
-            // Pass new request data if this is a newly created request
             ...(requestData && Object.keys(requestData).length > 0 && { newRequest: requestData }),
           }),
         });
@@ -50,14 +51,17 @@ export function HiringComposer() {
 
         console.log('✅ API call successful, reading stream...');
 
-        // Handle streaming SSE response
         const reader = response.body?.getReader();
         if (!reader) throw new Error('No response stream');
 
         const decoder = new TextDecoder();
         let buffer = '';
-        const thinkingBlocks: string[] = [];
-        let completedContent = '';
+        const messages: Array<{
+          role: string;
+          content: string;
+          type: string;
+          metadata?: Record<string, unknown>;
+        }> = [];
 
         while (true) {
           const { done, value } = await reader.read();
@@ -71,11 +75,19 @@ export function HiringComposer() {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
+                console.log('📨 Received message:', {
+                  type: data.type,
+                  hasContent: !!data.content,
+                });
 
-                if (data.type === 'thinking') {
-                  thinkingBlocks.push(data.content);
-                } else if (data.type === 'complete') {
-                  completedContent = data.content;
+                // Collect messages from stream (action: JD, result: scoring)
+                if (data.type === 'action' || data.type === 'result') {
+                  messages.push({
+                    role: 'assistant',
+                    content: data.content,
+                    type: data.type,
+                    metadata: data.metadata,
+                  });
                 }
               } catch (e) {
                 console.error('Failed to parse SSE:', e);
@@ -84,22 +96,42 @@ export function HiringComposer() {
           }
         }
 
-        // Show final JD with score + action buttons
-        if (completedContent) {
-          actions.addMessage({
-            role: 'assistant',
-            content: completedContent,
-            type: 'action',
-          });
-          // Don't auto-advance phase - let user approve/polish/revise first
+        // Add both messages to state and save to database
+        for (const msg of messages) {
+          console.log(`✅ Adding ${msg.type} message to state`);
+          actions.addMessage(
+            msg as {
+              role: 'user' | 'assistant';
+              content: string;
+              type?: 'text' | 'action' | 'result';
+              metadata?: Record<string, unknown>;
+            },
+          );
+
+          // Save message to database
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ threadId: tid, ...msg }),
+          }).catch((e) => console.error(`Failed to save ${msg.type} message:`, e));
         }
       } catch (error) {
         console.error('Workflow error:', error);
-        actions.addMessage({
-          role: 'assistant',
+        const errorMessage = {
+          role: 'assistant' as const,
           content: '❌ Error starting JD creation. Please try again.',
-          type: 'text',
-        });
+          type: 'text' as const,
+        };
+        actions.addMessage(errorMessage);
+
+        // Save error message to database
+        await fetch('/api/hiring/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ threadId: tid, ...errorMessage }),
+        }).catch((e) => console.error('Failed to save error message:', e));
       } finally {
         actions.setLoading(false);
       }
@@ -122,7 +154,6 @@ export function HiringComposer() {
       const data = await response.json();
       setThreadId(data.threadId);
 
-      // Reload threads list in sidebar (broadcast event)
       window.dispatchEvent(new Event('hiring:thread-created'));
     } catch (error) {
       console.error('Create thread error:', error);
@@ -169,12 +200,10 @@ export function HiringComposer() {
           type: 'action',
         });
 
-        // Set the new request as selected
         if (requestId) {
           actions.setSelectedRequest(requestId);
         }
 
-        // Reset extraction state
         setExtractionPhase('initial-prompt');
         setExtractedData({});
       } catch (error) {
@@ -191,7 +220,6 @@ export function HiringComposer() {
     [actions],
   );
 
-  // Handle hiring request confirmation/change via buttons
   useEffect(() => {
     const handleConfirm = () => {
       console.log('✅ User confirmed hiring request via button');
@@ -217,23 +245,32 @@ export function HiringComposer() {
       window.removeEventListener('confirm-hiring-request', handleConfirm as EventListener);
       window.removeEventListener('change-hiring-request', handleChange as EventListener);
     };
-  }, [extractedData, actions, saveHiringRequest]);
+  }, [saveHiringRequest, extractedData, actions]);
 
-  // Load existing thread from localStorage on mount only
-  // biome-ignore lint/correctness/useExhaustiveDependencies: checking initial state only
-  useEffect(() => {
-    const savedThreadId = localStorage.getItem('currentThreadId');
-    if (savedThreadId && savedThreadId !== threadId && !isLoadingExistingThread) {
-      console.log('📂 Loading existing thread:', savedThreadId);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsLoadingExistingThread(true);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setThreadId(savedThreadId);
+  // Load thread from localStorage (on mount and when flow changes)
+  useLayoutEffect(() => {
+    if (loadedFlowRef.current === state.selectedFlow) {
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    loadedFlowRef.current = state.selectedFlow || null;
 
-  // Create new thread when needed
+    const savedThreadId = localStorage.getItem('currentThreadId');
+    if (!savedThreadId || savedThreadId === prevThreadIdRef.current) return;
+
+    prevThreadIdRef.current = savedThreadId;
+
+    if (savedThreadId.startsWith('hiring-')) {
+      console.log('📂 Using pre-created thread from request selection:', savedThreadId);
+      queueMicrotask(() => setThreadId(savedThreadId));
+    } else {
+      console.log('📂 Loading previously saved thread:', savedThreadId);
+      queueMicrotask(() => {
+        setIsLoadingExistingThread(true);
+        setThreadId(savedThreadId);
+      });
+    }
+  }, [state.selectedFlow]);
+
   useEffect(() => {
     if (
       state.currentPhase === 'initial' &&
@@ -243,8 +280,7 @@ export function HiringComposer() {
       !isLoadingExistingThread
     ) {
       console.log('✅ Creating thread for request:', state.selectedRequestId);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      createThread();
+      queueMicrotask(() => createThread());
     }
   }, [
     state.currentPhase,
@@ -254,7 +290,6 @@ export function HiringComposer() {
     createThread,
   ]);
 
-  // Reset thread when request changes and phase is not initial
   useEffect(() => {
     if (
       state.selectedRequestId &&
@@ -269,15 +304,25 @@ export function HiringComposer() {
     prevPhaseRef.current = state.currentPhase;
   }, [state.selectedRequestId, state.currentPhase]);
 
-  // Auto-trigger API call ONLY after CREATING a new thread (not loading existing)
   useEffect(() => {
+    console.log('📋 useEffect check:', {
+      threadId,
+      isLoadingExistingThread,
+      currentPhase: state.currentPhase,
+      alreadyTriggered: triggeredThreadsRef.current.has(threadId || ''),
+      messageCount: state.messages.length,
+    });
+
+    // Only trigger workflow for NEW threads (created in this session)
+    // Don't retrigger for existing threads loaded from database
     if (
       threadId &&
       !isLoadingExistingThread &&
       state.currentPhase === 'initial' &&
-      !triggeredThreadsRef.current.has(threadId)
+      !triggeredThreadsRef.current.has(threadId) &&
+      state.messages.length > 0 && // Has at least initial messages
+      !state.messages.some((m) => m.content.includes('## ')) // No JD exists yet
     ) {
-      // Only trigger if we just created a new thread (not loading existing one) and haven't already
       console.log('🚀 Triggering workflow for thread:', threadId);
       triggeredThreadsRef.current.add(threadId);
       triggerInitialPhaseWorkflow(threadId, extractedData as Record<string, string>);
@@ -288,10 +333,10 @@ export function HiringComposer() {
     state.currentPhase,
     extractedData,
     triggerInitialPhaseWorkflow,
+    state.messages,
   ]);
 
   const handleCreateRequestFlow = async (userInput: string) => {
-    // Phase 1: Initial description submission and extraction
     if (extractionPhase === 'initial-prompt') {
       try {
         setExtractionPhase('extracting');
@@ -315,11 +360,9 @@ export function HiringComposer() {
         const missingFields = extracted.missing_fields || [];
 
         if (missingFields.length === 0) {
-          // All fields extracted successfully
           setExtractionPhase('collected-summary');
           showExtractedSummary(extracted);
         } else {
-          // Ask for missing fields
           setExtractionPhase('collected-summary');
           showMissingFieldsPrompt(missingFields);
         }
@@ -336,9 +379,7 @@ export function HiringComposer() {
       return;
     }
 
-    // Phase 2: Collecting missing fields
     if (extractionPhase === 'collected-summary') {
-      // User answered questions about missing fields - update extracted data
       const missingField = (
         extractedData as Record<string, unknown> & { missing_fields?: string[] }
       ).missing_fields?.[0];
@@ -363,10 +404,8 @@ export function HiringComposer() {
           updated as Record<string, unknown> & { missing_fields?: string[] }
         ).missing_fields;
         if (remainingMissing && remainingMissing.length > 0) {
-          // More fields to ask
           showMissingFieldsPrompt(remainingMissing);
         } else {
-          // All fields collected - show summary
           showExtractedSummary(updated);
         }
       }
@@ -432,7 +471,6 @@ ${data.team_skill_gap_summary || 'TBD'}
   const handleSend = async () => {
     if (!input.trim() || state.isLoading) return;
 
-    // Add user message
     actions.addMessage({
       role: 'user',
       content: input,
@@ -444,17 +482,13 @@ ${data.team_skill_gap_summary || 'TBD'}
     actions.setLoading(true);
 
     try {
-      // Check if user is creating a new hiring request
       if (state.selectedRequestId === 'creating') {
-        // Handle confirmation of extracted data
         if (extractionPhase === 'completed') {
           const userResponse = userInput.toLowerCase().trim();
           if (userResponse.includes('confirm') || userResponse === 'yes') {
-            // Save to database
             await saveHiringRequest(extractedData as Record<string, unknown>);
             return;
           } else if (userResponse.includes('change') || userResponse === 'no') {
-            // Reset and ask user to describe again
             setExtractionPhase('initial-prompt');
             setExtractedData({});
             actions.addMessage({
@@ -468,12 +502,10 @@ ${data.team_skill_gap_summary || 'TBD'}
           }
         }
 
-        // Handle conversational form for new request creation
         await handleCreateRequestFlow(userInput);
         return;
       }
 
-      // Call real backend API with thread context
       const response = await fetch('/api/hiring/v1/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -492,7 +524,6 @@ ${data.team_skill_gap_summary || 'TBD'}
         throw new Error(`Chat failed: ${response.status} ${errorText}`);
       }
 
-      // Handle streaming SSE response
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response stream');
 
@@ -530,7 +561,6 @@ ${data.team_skill_gap_summary || 'TBD'}
         });
       }
 
-      // Auto-advance phase
       const phaseSequence = [
         'initial',
         'jd-creation',
@@ -555,7 +585,7 @@ ${data.team_skill_gap_summary || 'TBD'}
       console.error('Chat error:', error);
       actions.addMessage({
         role: 'assistant',
-        content: 'Sorry, there was an error. Please try again.',
+        content: `❌ Error: ${String(error)}`,
         type: 'text',
       });
     } finally {
@@ -564,12 +594,9 @@ ${data.team_skill_gap_summary || 'TBD'}
   };
 
   return (
-    <div className="border-t border-hairline bg-surface-0 p-4">
+    <div className="flex flex-col gap-4 border-t border-hairline p-4">
       <div className="flex gap-2">
         <Input
-          placeholder={
-            state.isLoading ? 'Waiting for response...' : 'Message the hiring assistant...'
-          }
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -578,22 +605,14 @@ ${data.team_skill_gap_summary || 'TBD'}
               handleSend();
             }
           }}
+          placeholder="Type your message..."
           disabled={state.isLoading}
-          className="flex-1"
+          className="text-sm"
         />
-        <Button
-          onClick={handleSend}
-          disabled={!input.trim() || state.isLoading}
-          size="sm"
-          className="gap-2"
-        >
+        <Button onClick={handleSend} disabled={state.isLoading} size="sm" variant="primary">
           <Send className="h-4 w-4" />
         </Button>
       </div>
-      <p className="mt-2 text-xs text-ink-subtle">
-        💡 Tip: The assistant will guide you through each step of the hiring process. You can ask
-        questions or provide clarifications anytime.
-      </p>
     </div>
   );
 }

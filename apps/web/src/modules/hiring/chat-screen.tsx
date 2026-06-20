@@ -18,7 +18,7 @@ function ChatScreenContent() {
   return (
     <div className="flex h-full min-h-0 flex-1">
       {/* Desktop Sidebar */}
-      <div className="hidden w-[280px] flex-shrink-0 lg:flex">
+      <div className="hidden w-[320px] flex-shrink-0 lg:flex">
         <ThreadList />
       </div>
 
@@ -27,7 +27,7 @@ function ChatScreenContent() {
         <SheetContent
           side="left"
           hideClose
-          className="w-[280px] border-r border-hairline bg-surface-1 p-0 sm:max-w-none lg:hidden"
+          className="w-[320px] border-r border-hairline bg-surface-1 p-0 sm:max-w-none lg:hidden"
         >
           <ThreadList />
         </SheetContent>

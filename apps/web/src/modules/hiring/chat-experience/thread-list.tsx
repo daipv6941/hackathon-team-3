@@ -142,8 +142,20 @@ export function ThreadList() {
       if (!response.ok) throw new Error('Failed to load thread');
       const data = await response.json();
 
-      // Load thread data
-      actions.setSelectedRequest(thread.request_id);
+      // Load thread data with metadata
+      const threadData = data.thread || {};
+      const metadata = (threadData.metadata as Record<string, unknown>) || {};
+      const flow = metadata.flow as string | undefined;
+
+      if (flow) {
+        actions.setSelectedFlow(flow as 'jd-draft' | 'cv-shortlist');
+        localStorage.setItem('selectedFlow', flow);
+      }
+
+      if (thread.request_id) {
+        actions.setSelectedRequest(thread.request_id);
+      }
+
       const validPhases = [
         'initial',
         'complete',
@@ -179,7 +191,6 @@ export function ThreadList() {
       }));
 
       actions.setMessages(messages);
-      // Store current thread ID in state (you may need to add this to provider)
       localStorage.setItem('currentThreadId', thread.id);
     } catch (error) {
       console.error('Load thread error:', error);
@@ -209,7 +220,7 @@ export function ThreadList() {
   const currentThreadId = localStorage.getItem('currentThreadId');
 
   return (
-    <div className="flex h-full flex-col border-r border-hairline bg-surface-1">
+    <div className="flex h-full w-80 flex-col border-r border-hairline bg-surface-1">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-hairline p-4">
         <h2 className="text-sm font-semibold text-ink">Chat</h2>
@@ -260,18 +271,18 @@ export function ThreadList() {
                     <button
                       type="button"
                       onClick={() => handleSelectThread(thread)}
-                      className={`flex-1 flex flex-col items-start gap-1 px-3 py-2 text-left text-xs cursor-pointer ${
+                      className={`flex-1 min-w-0 flex flex-col items-start gap-1 px-3 py-2 text-left text-xs cursor-pointer ${
                         currentThreadId === thread.id ? 'text-ink' : 'text-ink-subtle'
                       }`}
                     >
-                      <div className="flex w-full items-center gap-2">
+                      <div className="flex w-full items-center gap-2 min-w-0">
                         <MessageSquare className="h-3 w-3 flex-shrink-0" />
                         <span className="truncate font-medium flex-1">{thread.title}</span>
-                        <span className="text-xs text-ink-subtler flex-shrink-0">
+                        <span className="text-xs text-ink-subtler flex-shrink-0 whitespace-nowrap">
                           {formatDate(thread.created_at)}
                         </span>
                       </div>
-                      <div className="pl-5 text-xs text-ink-subtler">
+                      <div className="pl-5 text-xs text-ink-subtler truncate w-full">
                         {thread.request_id} • {thread.current_phase}
                       </div>
                     </button>

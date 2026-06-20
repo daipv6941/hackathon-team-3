@@ -5,7 +5,18 @@ import { AlertCircle, CheckCircle2, MessageCircle, Search, ThumbsUp } from 'luci
 import { useEffect, useRef, useState } from 'react';
 import { HiringRequestSelector } from './hiring-request-selector';
 import { HiringSelection } from './hiring-selection';
+import { JDScoringBreakdown } from './jd-scoring-breakdown';
 import { useHiringChat } from './use-hiring-chat';
+
+interface ScoringBreakdownMetadata {
+  clarityScore?: number;
+  status?: string;
+  categoryScores?: Record<string, number>;
+  flaggedGaps?: string[];
+  requiredRevisions?: string[];
+  confidence?: string;
+  iterations?: number;
+}
 
 export function HiringTranscript() {
   const { state } = useHiringChat();
@@ -18,7 +29,8 @@ export function HiringTranscript() {
     }
   }, []);
 
-  if (state.currentPhase === 'selection') {
+  // Only show workflow selector if no flow is selected yet
+  if (state.currentPhase === 'selection' && !state.selectedFlow) {
     return <HiringSelection />;
   }
 
@@ -88,18 +100,44 @@ function MessageBubble({
         type: 'text',
       });
 
-      // Extract JD content and clarity score from the message
+      // Extract JD content (from action message)
       const jdContent = message.content || '';
-      const clarityMatch = jdContent.match(/Clarity Score:.*?(\d+)\/100/);
-      const clarityScore = clarityMatch?.[1] ? parseInt(clarityMatch[1], 10) : 0;
+
+      // Find the result message (scoring breakdown) to get clarity score
+      const resultMessage = state.messages.find((msg) => msg.type === 'result');
+      const resultMetadata = (resultMessage?.metadata as Record<string, unknown> | undefined) || {};
+
+      console.log('🔍 Message structure:', {
+        currentMessageType: message.type,
+        currentMessageHasMetadata: !!message.metadata,
+        foundResultMessage: !!resultMessage,
+        resultMetadata: JSON.stringify(resultMetadata),
+      });
+
+      // Get clarity score from result message metadata
+      let clarityScore: number | undefined;
+
+      if (typeof resultMetadata.clarityScore === 'number') {
+        clarityScore = resultMetadata.clarityScore;
+      } else if (resultMetadata.clarityScore) {
+        clarityScore = parseInt(String(resultMetadata.clarityScore), 10);
+      }
+
+      // Fallback: try to extract from content if result message not found
+      if (!clarityScore) {
+        const clarityMatch = jdContent.match(/Clarity Score:.*?(\d+)\/100/);
+        clarityScore = clarityMatch?.[1] ? parseInt(clarityMatch[1], 10) : 0;
+      }
 
       console.log('📤 Approving JD for request:', {
         requestId: state.selectedRequestId,
         clarityScore,
         contentLength: jdContent.length,
+        hasResultMessage: !!resultMessage,
+        resultMetadataKeys: Object.keys(resultMetadata),
       });
 
-      // Call API to save JD and update request status
+      // Call API to save JD and update request status with full scoring metadata
       const response = await fetch('/api/hiring/v1/jd/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -108,6 +146,12 @@ function MessageBubble({
           requestId: state.selectedRequestId,
           jdText: jdContent,
           clarityScore,
+          categoryScores: resultMetadata.categoryScores,
+          flaggedGaps: resultMetadata.flaggedGaps,
+          requiredRevisions: resultMetadata.requiredRevisions,
+          confidence: resultMetadata.confidence,
+          iterations: resultMetadata.iterations,
+          status: resultMetadata.status,
         }),
       });
 
@@ -376,15 +420,33 @@ ${result.summary}`;
               : 'bg-surface-2 text-ink rounded-bl-none'
           }`}
         >
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          <div className="whitespace-pre-wrap">{message.content as unknown as string}</div>
         </div>
+
+        {/* Show scoring breakdown for 'result' type messages with clarityScore */}
+        {!isUser &&
+        message.type === 'result' &&
+        (message.metadata as ScoringBreakdownMetadata | undefined)?.clarityScore ? (
+          <JDScoringBreakdown
+            clarityScore={(message.metadata as ScoringBreakdownMetadata).clarityScore || 0}
+            status={(message.metadata as ScoringBreakdownMetadata).status || 'Needs Revision'}
+            categoryScores={(message.metadata as ScoringBreakdownMetadata).categoryScores || {}}
+            flaggedGaps={(message.metadata as ScoringBreakdownMetadata).flaggedGaps || []}
+            requiredRevisions={
+              (message.metadata as ScoringBreakdownMetadata).requiredRevisions || []
+            }
+            confidence={(message.metadata as ScoringBreakdownMetadata).confidence || 'Medium'}
+            iterations={(message.metadata as ScoringBreakdownMetadata).iterations || 0}
+          />
+        ) : null}
 
         {/* Show action buttons for JD approval or other actions */}
         {!isUser && showActions && message.type === 'action' && (
           <>
-            {/* JD Approval buttons - show after scoring */}
+            {/* JD Approval buttons - show for JD drafts */}
             {(state.currentPhase === 'initial' || state.currentPhase === 'jd-approval') &&
-              message.content.includes('Clarity Score') && (
+              (String(message.content).includes('Clarity Score') ||
+                String(message.content).includes('## ')) && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button size="sm" variant="default" onClick={handleApprove} className="gap-1">
                     <ThumbsUp className="h-3 w-3" />

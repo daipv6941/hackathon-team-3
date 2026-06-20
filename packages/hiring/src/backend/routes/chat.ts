@@ -10,8 +10,9 @@ import {
   draftJd,
   extractRequestDetails,
   fetchContext,
-  reviseJdWithFeedback,
+  reviseJd,
   scoreJd,
+  screenCv,
 } from '../orchestration.ts';
 
 export interface HiringRouteDeps {
@@ -28,7 +29,7 @@ export interface HiringRouteEnv {
   };
 }
 
-const ChatBody = z.object({
+const _ChatBody = z.object({
   threadId: z.string().optional(),
   messages: z.array(z.unknown()),
   requestId: z.string(),
@@ -41,45 +42,65 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     return drizzle(deps.pool, { schema });
   };
 
-  /**
-   * POST /hiring/v1/threads
-   * Create a new thread for a hiring request
-   */
   app.post('/v1/threads', async (c) => {
     try {
       const body = await c.req.json();
-      const { requestId: reqId, title: threadTitle } = body as Record<string, unknown>;
+      const {
+        requestId: reqId,
+        title: threadTitle,
+        flow,
+        initialMessage,
+      } = body as Record<string, unknown>;
 
       const session = c.get('session') ?? {
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         user_id: '550e8400-e29b-41d4-a716-446655440001',
       };
 
-      if (!reqId || typeof reqId !== 'string') {
-        return c.json({ error: 'requestId required' }, 400);
-      }
-
       const db = getDb();
       const threadId = `hiring-${crypto.randomUUID()}`;
 
-      // Fetch request context for metadata
-      const context = await fetchContext({
-        requestId: reqId,
-        tenantId: session.tenant_id,
-      });
+      let context: Record<string, unknown> | null = null;
+      let title = threadTitle || `Hiring - ${flow || 'New'}`;
 
-      // Create thread
-      await db.insert(schema.hiringThreads).values({
+      if (reqId && typeof reqId === 'string') {
+        const fetchedContext = await fetchContext({
+          requestId: reqId,
+          tenantId: session.tenant_id,
+        });
+        if (Object.keys(fetchedContext).length > 0) {
+          context = fetchedContext as unknown as Record<string, unknown>;
+        }
+        title =
+          typeof threadTitle === 'string' ? threadTitle : `Hiring - ${fetchedContext.position}`;
+      }
+
+      const metadata: Record<string, unknown> = { createdVia: 'api' };
+      if (flow) metadata.flow = flow;
+
+      const threadValues = {
         id: threadId,
         tenant_id: session.tenant_id,
         user_id: session.user_id,
-        request_id: reqId,
-        title: typeof threadTitle === 'string' ? threadTitle : `Hiring - ${context.position}`,
-        context: context as Record<string, unknown>,
-        current_phase: 'initial',
-        metadata: { createdVia: 'api' } as Record<string, unknown>,
-      });
+        request_id: reqId ? String(reqId) : undefined,
+        title,
+        context: context as Record<string, unknown> | null,
+        current_phase: 'selection',
+        metadata: metadata as Record<string, unknown>,
+      };
 
+      await db.insert(schema.hiringThreads).values(threadValues as any);
+
+      if (initialMessage && typeof initialMessage === 'string') {
+        await db.insert(schema.hiringMessages).values({
+          thread_id: threadId,
+          role: 'assistant',
+          content: initialMessage,
+          type: 'action',
+        });
+      }
+
+      console.log(`✅ Thread ${threadId} created for flow: ${flow}`);
       return c.json({ threadId, success: true }, 201);
     } catch (error) {
       console.error('Create thread error:', error);
@@ -87,10 +108,39 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
-  /**
-   * GET /hiring/v1/threads
-   * List threads for current user
-   */
+  app.post('/v1/messages', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { threadId, role, content, type, thinking_content, metadata } = body as Record<
+        string,
+        unknown
+      >;
+
+      if (!threadId || !role || !content) {
+        return c.json({ error: 'threadId, role, and content required' }, 400);
+      }
+
+      const db = getDb();
+      const messageId = crypto.randomUUID();
+
+      await db.insert(schema.hiringMessages).values({
+        id: messageId,
+        thread_id: String(threadId),
+        role: String(role),
+        content: String(content),
+        type: type ? String(type) : 'text',
+        thinking_content: thinking_content ? String(thinking_content) : undefined,
+        metadata: metadata as Record<string, unknown>,
+      });
+
+      console.log(`✅ Message saved to thread ${threadId}`);
+      return c.json({ messageId, success: true }, 201);
+    } catch (error) {
+      console.error('Save message error:', error);
+      return c.json({ error: 'Failed to save message' }, 500);
+    }
+  });
+
   app.get('/v1/threads', async (c) => {
     try {
       const session = c.get('session') ?? {
@@ -99,11 +149,16 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       };
 
       const db = getDb();
+      const limit = parseInt(c.req.query('limit') || '10', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
       const threads = await db
         .select()
         .from(schema.hiringThreads)
         .where(eq(schema.hiringThreads.user_id, session.user_id))
-        .orderBy(desc(schema.hiringThreads.created_at));
+        .orderBy(desc(schema.hiringThreads.created_at))
+        .limit(limit)
+        .offset(offset);
 
       return c.json({ threads });
     } catch (error) {
@@ -112,20 +167,13 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
-  /**
-   * DELETE /hiring/v1/threads/:id
-   * Delete thread and all messages
-   */
   app.delete('/v1/threads/:id', async (c) => {
     try {
       const threadId = c.req.param('id');
 
       const db = getDb();
 
-      // Delete all messages for this thread
       await db.delete(schema.hiringMessages).where(eq(schema.hiringMessages.thread_id, threadId));
-
-      // Delete the thread itself
       await db.delete(schema.hiringThreads).where(eq(schema.hiringThreads.id, threadId));
 
       return c.json({ success: true, message: 'Thread deleted' });
@@ -135,10 +183,6 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
-  /**
-   * GET /hiring/v1/threads/:id
-   * Get thread with message history
-   */
   app.get('/v1/threads/:id', async (c) => {
     try {
       const threadId = c.req.param('id');
@@ -164,10 +208,31 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
-  /**
-   * GET /v1/requests
-   * List all hiring requests for the tenant
-   */
+  app.patch('/v1/threads/:id', async (c) => {
+    try {
+      const threadId = c.req.param('id');
+      const body = await c.req.json();
+      const { title, request_id, current_phase } = body as Record<string, unknown>;
+
+      const db = getDb();
+
+      const updateData: Record<string, string> = {};
+      if (title) updateData.title = String(title);
+      if (request_id) updateData.request_id = String(request_id);
+      if (current_phase) updateData.current_phase = String(current_phase);
+
+      await db
+        .update(schema.hiringThreads)
+        .set(updateData as any)
+        .where(eq(schema.hiringThreads.id, threadId));
+
+      return c.json({ success: true, message: 'Thread updated' });
+    } catch (error) {
+      console.error('Update thread error:', error);
+      return c.json({ error: 'Failed to update thread' }, 500);
+    }
+  });
+
   app.get('/v1/requests', async (c) => {
     try {
       const session = c.get('session') ?? {
@@ -199,33 +264,156 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
-  /**
-   * POST /v1/jd/approve
-   * Approve JD and update request status
-   */
-  app.post('/v1/jd/approve', async (c) => {
+  app.post('/v1/chat', async (c) => {
     try {
-      const { requestId, jdText, clarityScore } = await c.req.json();
-      console.log('📨 POST /v1/jd/approve called:', {
-        requestId,
-        clarityScore,
-        textLength: jdText?.length,
+      const body = await c.req.json();
+      const { threadId, messages: requestMessages, requestId, phase } = body as Record<string, any>;
+
+      if (!threadId || !requestId) {
+        return c.json({ error: 'threadId and requestId required' }, 400);
+      }
+
+      const session = c.get('session') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
+
+      const db = getDb();
+
+      const request = await db.query.hiringRequests.findFirst({
+        where: eq(schema.hiringRequests.request_id, requestId),
       });
 
+      if (!request) {
+        return c.json({ error: 'Hiring request not found' }, 404);
+      }
+
+      const context = await fetchContext({ requestId, tenantId: session.tenant_id }, db);
+
+      const jdId = `JD-${requestId.replace('REQ-', '')}-${Date.now().toString().slice(-6)}`;
+
+      let currentJd = await draftJd({
+        ...(context as any),
+        jdId,
+        requestId,
+        tenantId: session.tenant_id,
+      });
+
+      // Auto-scoring loop: score until >= 80 or max 3 iterations
+      let scoreResult = await scoreJd({
+        jdId,
+        tenantId: session.tenant_id,
+        jdText: currentJd.draftText,
+      });
+
+      let iteration = 1;
+      const maxIterations = 3;
+
+      while (scoreResult.clarityScore < 80 && iteration < maxIterations) {
+        console.log(
+          `📊 Iteration ${iteration}: Score ${scoreResult.clarityScore}/100, revising...`,
+        );
+
+        // Revise based on flagged gaps
+        const revised = await reviseJd({
+          jdId,
+          tenantId: session.tenant_id,
+          currentDraft: currentJd.draftText,
+          flaggedGaps: scoreResult.flaggedGaps || [],
+        });
+
+        currentJd = {
+          draftText: revised.revisedText,
+          fullPrompt: currentJd.fullPrompt,
+        };
+
+        // Re-score the revised JD
+        scoreResult = await scoreJd({
+          jdId,
+          tenantId: session.tenant_id,
+          jdText: currentJd.draftText,
+        });
+
+        iteration++;
+      }
+
+      console.log(
+        `✅ Final Score: ${scoreResult.clarityScore}/100 after ${iteration - 1} iteration(s)`,
+      );
+
+      // Prepare messages to stream
+      const jdMessage = {
+        type: 'action',
+        content: currentJd.draftText,
+        metadata: {
+          draftJdPrompt: currentJd.fullPrompt,
+        },
+      };
+
+      const scoringContent = `## 📊 Quality Assessment
+
+**Clarity Score: ${scoreResult.clarityScore}/100** — ${scoreResult.status}
+
+Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scoreResult.confidence} confidence)`;
+
+      const scoringMessage = {
+        type: 'result',
+        content: scoringContent,
+        metadata: {
+          clarityScore: scoreResult.clarityScore,
+          status: scoreResult.status,
+          categoryScores: scoreResult.categoryScores,
+          flaggedGaps: scoreResult.flaggedGaps,
+          requiredRevisions: scoreResult.requiredRevisions,
+          confidence: scoreResult.confidence,
+          iterations: iteration - 1,
+        },
+      };
+
+      return stream(c, async (writer) => {
+        try {
+          // Stream Message 1: JD Content
+          await writer.write(`data: ${JSON.stringify(jdMessage)}\n\n`);
+
+          // Stream Message 2: Scoring Breakdown
+          await writer.write(`data: ${JSON.stringify(scoringMessage)}\n\n`);
+        } catch (error) {
+          console.error('Stream error:', error);
+        }
+      });
+    } catch (error) {
+      console.error('Chat error:', error);
+      return c.json({ error: 'Failed to process chat' }, 500);
+    }
+  });
+
+  app.post('/v1/jd/approve', async (c) => {
+    try {
+      const {
+        requestId,
+        jdText,
+        clarityScore,
+        categoryScores,
+        flaggedGaps,
+        requiredRevisions,
+        confidence,
+        iterations,
+      } = await c.req.json();
+
       if (!requestId || !jdText) {
-        console.log('❌ Missing required fields');
         return c.json({ error: 'requestId and jdText required' }, 400);
       }
 
       const db = getDb();
-
-      // Generate unique JD ID
       const timestamp = Date.now().toString().slice(-6);
       const jdId = `JD-${requestId.replace('REQ-', '')}-${timestamp}`;
 
-      console.log(`💾 Saving JD ${jdId}...`);
+      console.log('📨 POST /v1/jd/approve called:', {
+        requestId,
+        clarityScore,
+        iterations,
+      });
 
-      // Save JD to database
       await db.insert(schema.hiringJobs).values({
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         jd_id: jdId,
@@ -238,12 +426,14 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         status: 'Ready',
       });
 
-      console.log(`✅ JD saved, updating request ${requestId} status...`);
+      console.log(`💾 Saved JD ${jdId} with clarity score: ${clarityScore}`);
 
-      // Update request status to JD Approved and store jd_id
       await db
         .update(schema.hiringRequests)
-        .set({ request_status: 'JD Approved', jd_id: jdId })
+        .set({
+          request_status: 'JD Approved',
+          jd_id: jdId,
+        })
         .where(eq(schema.hiringRequests.request_id, requestId));
 
       console.log(`✅ Request ${requestId} status updated to JD Approved with jd_id: ${jdId}`);
@@ -253,6 +443,8 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         message: `JD approved and request ${requestId} updated`,
         jdId,
         requestId,
+        clarityScore,
+        iterations,
       });
     } catch (error) {
       console.error('❌ Approve JD error:', error);
@@ -260,322 +452,6 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
-  /**
-   * POST /v1/jd/revise
-   * Revise JD based on user feedback
-   */
-  app.post('/v1/jd/revise', async (c) => {
-    try {
-      const { currentJdText, userFeedback, position, teamSkillGap, keyDeliverables } =
-        await c.req.json();
-
-      console.log('📨 POST /v1/jd/revise called');
-
-      if (!currentJdText || !userFeedback) {
-        return c.json({ error: 'currentJdText and userFeedback required' }, 400);
-      }
-
-      console.log('🔄 Revising JD based on user feedback...');
-
-      // Call orchestration function to revise JD
-      const result = await reviseJdWithFeedback({
-        currentJdText: String(currentJdText),
-        userFeedback: String(userFeedback),
-        position: String(position || 'Unknown Position'),
-        teamSkillGap: String(teamSkillGap || ''),
-        keyDeliverables: String(keyDeliverables || ''),
-      });
-
-      console.log('✅ JD revised successfully');
-
-      return c.json({
-        success: true,
-        revisedJdText: result.revisedText,
-        fullPrompt: result.fullPrompt,
-      });
-    } catch (error) {
-      console.error('❌ Revise JD error:', error);
-      return c.json({ error: 'Failed to revise JD' }, 500);
-    }
-  });
-
-  /**
-   * PUT /v1/requests/:requestId/status
-   * Update request status
-   */
-  app.put('/v1/requests/:requestId/status', async (c) => {
-    try {
-      const requestId = c.req.param('requestId');
-      const { status } = await c.req.json();
-
-      if (!status) {
-        return c.json({ error: 'Status is required' }, 400);
-      }
-
-      const db = getDb();
-      console.log(`Updating request ${requestId} status to ${status}`);
-
-      // Update in database
-      await db
-        .update(schema.hiringRequests)
-        .set({ request_status: status })
-        .where(eq(schema.hiringRequests.request_id, requestId));
-
-      console.log(`✅ Updated request ${requestId} to ${status}`);
-
-      return c.json({
-        success: true,
-        message: `Request ${requestId} status updated to ${status}`,
-        requestId,
-        status,
-      });
-    } catch (error) {
-      console.error('Update status error:', error);
-      return c.json({ error: 'Failed to update status' }, 500);
-    }
-  });
-
-  /**
-   * GET /v1/jd/:jdId
-   * Get JD details by ID
-   */
-  app.get('/v1/jd/:jdId', async (c) => {
-    try {
-      const jdId = c.req.param('jdId');
-      const db = getDb();
-
-      const results = await db
-        .select({
-          jdId: schema.hiringJobs.jd_id,
-          requestId: schema.hiringJobs.request_id,
-          position: schema.hiringJobs.position,
-          seniorityLevel: schema.hiringJobs.seniority_level,
-          minYoe: schema.hiringJobs.min_yoe,
-          maxYoe: schema.hiringJobs.max_yoe,
-          mustHaveSkills: schema.hiringJobs.must_have_skills,
-          niceToHaveSkills: schema.hiringJobs.nice_to_have_skills,
-          englishLevelRequired: schema.hiringJobs.english_level_required,
-          workMode: schema.hiringJobs.work_mode,
-          salaryRange: schema.hiringJobs.salary_range,
-          keyResponsibilities: schema.hiringJobs.key_responsibilities,
-          jdFullText: schema.hiringJobs.jd_full_text,
-          status: schema.hiringJobs.status,
-          agentClarityScore: schema.hiringJobs.agent_clarity_score,
-          createdAt: schema.hiringJobs.created_at,
-        })
-        .from(schema.hiringJobs)
-        .where(eq(schema.hiringJobs.jd_id, jdId));
-
-      const jd = results[0] || null;
-
-      if (!jd) {
-        return c.json({ error: 'JD not found' }, 404);
-      }
-
-      console.log('📄 GET /v1/jd/:jdId response:', { jdId, foundFields: Object.keys(jd) });
-      return c.json(jd);
-    } catch (error) {
-      console.error('Get JD error:', error);
-      return c.json({ error: 'Failed to fetch JD' }, 500);
-    }
-  });
-
-  /**
-   * GET /v1/jd
-   * Get JD by requestId query parameter
-   */
-  app.get('/v1/jd', async (c) => {
-    try {
-      const requestId = c.req.query('requestId');
-
-      if (!requestId) {
-        return c.json({ error: 'requestId query parameter is required' }, 400);
-      }
-
-      const db = getDb();
-
-      const results = await db
-        .select({
-          jdId: schema.hiringJobs.jd_id,
-          requestId: schema.hiringJobs.request_id,
-          position: schema.hiringJobs.position,
-          seniorityLevel: schema.hiringJobs.seniority_level,
-          minYoe: schema.hiringJobs.min_yoe,
-          maxYoe: schema.hiringJobs.max_yoe,
-          mustHaveSkills: schema.hiringJobs.must_have_skills,
-          niceToHaveSkills: schema.hiringJobs.nice_to_have_skills,
-          englishLevelRequired: schema.hiringJobs.english_level_required,
-          workMode: schema.hiringJobs.work_mode,
-          salaryRange: schema.hiringJobs.salary_range,
-          keyResponsibilities: schema.hiringJobs.key_responsibilities,
-          jdFullText: schema.hiringJobs.jd_full_text,
-          status: schema.hiringJobs.status,
-          agentClarityScore: schema.hiringJobs.agent_clarity_score,
-          createdAt: schema.hiringJobs.created_at,
-        })
-        .from(schema.hiringJobs)
-        .where(eq(schema.hiringJobs.request_id, String(requestId)))
-        .orderBy(desc(schema.hiringJobs.created_at))
-        .limit(1);
-
-      const jd = results[0] || null;
-
-      if (!jd) {
-        return c.json({ error: 'No JD found for this request' }, 404);
-      }
-
-      console.log('📄 GET /v1/jd (by requestId) response:', { requestId, jdId: jd.jdId });
-      return c.json({ jd });
-    } catch (error) {
-      console.error('Get JD by requestId error:', error);
-      return c.json({ error: 'Failed to fetch JD' }, 500);
-    }
-  });
-
-  /**
-   * GET /v1/candidates/:requestId
-   * Get candidates for a hiring request
-   */
-  app.get('/v1/candidates/:requestId', async (c) => {
-    try {
-      const requestId = c.req.param('requestId');
-      const db = getDb();
-
-      // Get all candidates from pool
-      const allCandidates = await db
-        .select({
-          cvId: schema.hiringCandidates.cv_id,
-          candidateId: schema.hiringCandidates.candidate_id,
-          candidateName: schema.hiringCandidates.full_name,
-          currentTitle: schema.hiringCandidates.current_title,
-          currentCompany: schema.hiringCandidates.current_company,
-          yearsOfExperience: schema.hiringCandidates.years_of_experience,
-          cvSkills: schema.hiringCandidates.cv_skills,
-          englishLevel: schema.hiringCandidates.english_level,
-          salaryExpectation: schema.hiringCandidates.salary_expectation,
-        })
-        .from(schema.hiringCandidates);
-
-      // Get screening results for this specific request
-      const shortlistResults = await db
-        .select({
-          cvId: schema.hiringShortlistResults.cv_id,
-          fitScore: schema.hiringShortlistResults.fit_score,
-          recommendation: schema.hiringShortlistResults.recommendation,
-          fitSummary: schema.hiringShortlistResults.fit_summary,
-        })
-        .from(schema.hiringShortlistResults)
-        .where(eq(schema.hiringShortlistResults.request_id, requestId));
-
-      // Merge screening results with candidate pool
-      const candidates = allCandidates.map((c) => {
-        const result = shortlistResults.find((r) => r.cvId === c.cvId);
-        return {
-          ...c,
-          fitScore: result?.fitScore || null,
-          recommendation: result?.recommendation || null,
-          fitSummary: result?.fitSummary || null,
-        };
-      });
-
-      return c.json({ candidates, total: candidates.length });
-    } catch (error) {
-      console.error('Get candidates error:', error);
-      return c.json({ error: 'Failed to fetch candidates' }, 500);
-    }
-  });
-
-  /**
-   * POST /v1/candidates/score
-   * Score a single candidate against a JD
-   */
-  app.post('/v1/candidates/score', async (c) => {
-    try {
-      const { cvId, jdId, requestId } = await c.req.json();
-      const db = getDb();
-
-      if (!cvId || !jdId || !requestId) {
-        return c.json({ error: 'cvId, jdId, and requestId required' }, 400);
-      }
-
-      // Fetch candidate
-      const candidate = await db.query.hiringCandidates.findFirst({
-        where: eq(schema.hiringCandidates.cv_id, cvId),
-      });
-
-      if (!candidate) {
-        return c.json({ error: 'Candidate not found' }, 404);
-      }
-
-      // Fetch JD
-      const jd = await db.query.hiringJobs.findFirst({
-        where: eq(schema.hiringJobs.jd_id, jdId),
-      });
-
-      if (!jd) {
-        return c.json({ error: 'JD not found' }, 404);
-      }
-
-      // Score candidate
-      const { screenCv } = await import('../orchestration.ts');
-      const scoreResult = await screenCv({
-        cvId,
-        jdId,
-        requestId,
-        tenantId: '550e8400-e29b-41d4-a716-446655440000',
-        candidateName: candidate.full_name,
-        cvSkills: candidate.cv_skills || '',
-        yearsOfExperience: candidate.years_of_experience || 0,
-        englishLevel: candidate.english_level || 'B2',
-        salaryExpectation: candidate.salary_expectation || 'Negotiable',
-        jdMustHave: jd.must_have_skills || '',
-        jdNiceToHave: jd.nice_to_have_skills || '',
-        jdMinYoe: jd.min_yoe || 0,
-      });
-
-      // Save score to shortlist_results table
-      await db.insert(schema.hiringShortlistResults).values({
-        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
-        request_id: requestId,
-        jd_id: jdId,
-        cv_id: cvId,
-        candidate_id: candidate.candidate_id,
-        candidate_name: candidate.full_name,
-        fit_score: String(scoreResult.fitScore),
-        recommendation: String(scoreResult.recommendation),
-        confidence: scoreResult.confidence as unknown as string,
-        fit_summary: scoreResult.fitSummary as unknown as string,
-        gap_summary: scoreResult.gapSummary as unknown as string,
-        category_scores: scoreResult.categoryScores as unknown as Record<string, unknown>,
-        matched_evidence: scoreResult.matchedEvidence as unknown as Record<string, unknown>,
-        flags: scoreResult.flags as unknown as Record<string, unknown>,
-        interview_questions: scoreResult.interviewQuestions as unknown as Record<string, unknown>,
-        follow_up_questions: scoreResult.followUpQuestions as unknown as Record<string, unknown>,
-        reject_reason: scoreResult.rejectReason as unknown as string,
-      });
-
-      return c.json({
-        success: true,
-        cvId,
-        candidateName: candidate.full_name,
-        fitScore: scoreResult.fitScore,
-        recommendation: scoreResult.recommendation,
-        fitSummary: scoreResult.fitSummary,
-        categoryScores: scoreResult.categoryScores,
-        flags: scoreResult.flags,
-        suggestedQuestions: scoreResult.suggestedQuestions,
-        fullPrompt: scoreResult.fullPrompt,
-      });
-    } catch (error) {
-      console.error('Score candidate error:', error);
-      return c.json({ error: 'Failed to score candidate' }, 500);
-    }
-  });
-
-  /**
-   * POST /v1/shortlist/screen-and-report
-   * Screen all candidates in pool against JD and generate shortlist report
-   */
   app.post('/v1/shortlist/screen-and-report', async (c) => {
     try {
       const { requestId, jdId } = await c.req.json();
@@ -612,7 +488,6 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       console.log('🗑️ Deleted previous screening results for request');
 
       // Score each candidate
-      const { screenCv } = await import('../orchestration.ts');
       const scoredCandidates = [];
 
       for (const candidate of allCandidates) {
@@ -754,10 +629,322 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
-  /**
-   * POST /v1/shortlist/confirm
-   * Confirm final shortlist and update request status
-   */
+  app.get('/v1/jd', async (c) => {
+    try {
+      const requestId = c.req.query('requestId');
+
+      if (!requestId) {
+        return c.json({ error: 'requestId required' }, 400);
+      }
+
+      const db = getDb();
+
+      const jd = await db.query.hiringJobs.findFirst({
+        where: eq(schema.hiringJobs.request_id, requestId),
+      });
+
+      if (!jd) {
+        return c.json({ error: 'JD not found' }, 404);
+      }
+
+      return c.json({ jd });
+    } catch (error) {
+      console.error('Get JD error:', error);
+      return c.json({ error: 'Failed to fetch JD' }, 500);
+    }
+  });
+
+  app.post('/v1/requests/extract', async (c) => {
+    try {
+      const { description } = await c.req.json();
+
+      if (!description) {
+        return c.json({ error: 'description required' }, 400);
+      }
+
+      const extracted = await extractRequestDetails({
+        description,
+      });
+
+      return c.json({ extracted });
+    } catch (error) {
+      console.error('Extract error:', error);
+      return c.json({ error: 'Failed to extract details' }, 500);
+    }
+  });
+
+  app.post('/v1/requests', async (c) => {
+    try {
+      const body = await c.req.json();
+
+      const session = c.get('session') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
+
+      const db = getDb();
+
+      const requestId = `REQ-${Date.now().toString().slice(-5)}`;
+
+      const _result = await db
+        .insert(schema.hiringRequests)
+        .values({
+          tenant_id: session.tenant_id,
+          request_id: requestId,
+          position_title: body.position_title || 'TBD',
+          team_name: body.team_name,
+          urgency_level: body.urgency_level || 'Medium',
+          headcount_requested: parseInt(body.headcount_requested, 10) || 1,
+          business_justification: body.business_justification,
+          team_skill_gap_summary: body.team_skill_gap_summary,
+          key_deliverables: body.key_deliverables,
+          salary_range: body.salary_range,
+          work_mode: body.work_mode,
+          min_yoe: body.min_yoe ? parseInt(body.min_yoe, 10) : undefined,
+          english_level_required: body.english_level_required,
+          hr_owner: session.user_id,
+          request_status: 'New',
+        })
+        .returning({ id: schema.hiringRequests.id });
+
+      console.log(`✅ Hiring request ${requestId} created`);
+
+      return c.json({ requestId, success: true });
+    } catch (error) {
+      console.error('Create request error:', error);
+      return c.json({ error: 'Failed to create hiring request' }, 500);
+    }
+  });
+
+  app.post('/v1/jd/revise', async (c) => {
+    try {
+      const { currentJdText, userFeedback, position, teamSkillGap, keyDeliverables } =
+        await c.req.json();
+
+      console.log('📨 POST /v1/jd/revise called');
+
+      if (!currentJdText || !userFeedback) {
+        return c.json({ error: 'currentJdText and userFeedback required' }, 400);
+      }
+
+      console.log('🔄 Revising JD based on user feedback...');
+
+      const result = await reviseJd({
+        currentDraft: String(currentJdText),
+        flaggedGaps: [],
+        jdId: 'temp',
+        tenantId: '550e8400-e29b-41d4-a716-446655440000',
+      });
+
+      console.log('✅ JD revised successfully');
+
+      return c.json({
+        success: true,
+        revisedJdText: result.revisedText,
+        fullPrompt: result.fullPrompt,
+      });
+    } catch (error) {
+      console.error('❌ Revise JD error:', error);
+      return c.json({ error: 'Failed to revise JD' }, 500);
+    }
+  });
+
+  app.put('/v1/requests/:requestId/status', async (c) => {
+    try {
+      const requestId = c.req.param('requestId');
+      const { status } = await c.req.json();
+
+      if (!status) {
+        return c.json({ error: 'Status is required' }, 400);
+      }
+
+      const db = getDb();
+      console.log(`Updating request ${requestId} status to ${status}`);
+
+      await db
+        .update(schema.hiringRequests)
+        .set({ request_status: status })
+        .where(eq(schema.hiringRequests.request_id, requestId));
+
+      console.log(`✅ Updated request ${requestId} to ${status}`);
+
+      return c.json({
+        success: true,
+        message: `Request ${requestId} status updated to ${status}`,
+        requestId,
+        status,
+      });
+    } catch (error) {
+      console.error('Update status error:', error);
+      return c.json({ error: 'Failed to update status' }, 500);
+    }
+  });
+
+  app.get('/v1/jd/:jdId', async (c) => {
+    try {
+      const jdId = c.req.param('jdId');
+      const db = getDb();
+
+      const results = await db
+        .select({
+          jdId: schema.hiringJobs.jd_id,
+          requestId: schema.hiringJobs.request_id,
+          position: schema.hiringJobs.position,
+          seniorityLevel: schema.hiringJobs.seniority_level,
+          minYoe: schema.hiringJobs.min_yoe,
+          maxYoe: schema.hiringJobs.max_yoe,
+          mustHaveSkills: schema.hiringJobs.must_have_skills,
+          niceToHaveSkills: schema.hiringJobs.nice_to_have_skills,
+          englishLevelRequired: schema.hiringJobs.english_level_required,
+          workMode: schema.hiringJobs.work_mode,
+          salaryRange: schema.hiringJobs.salary_range,
+          keyResponsibilities: schema.hiringJobs.key_responsibilities,
+          jdFullText: schema.hiringJobs.jd_full_text,
+          status: schema.hiringJobs.status,
+          agentClarityScore: schema.hiringJobs.agent_clarity_score,
+          createdAt: schema.hiringJobs.created_at,
+        })
+        .from(schema.hiringJobs)
+        .where(eq(schema.hiringJobs.jd_id, jdId));
+
+      const jd = results[0] || null;
+
+      if (!jd) {
+        return c.json({ error: 'JD not found' }, 404);
+      }
+
+      console.log('📄 GET /v1/jd/:jdId response:', { jdId, foundFields: Object.keys(jd) });
+      return c.json(jd);
+    } catch (error) {
+      console.error('Get JD error:', error);
+      return c.json({ error: 'Failed to fetch JD' }, 500);
+    }
+  });
+
+  app.get('/v1/candidates/:requestId', async (c) => {
+    try {
+      const requestId = c.req.param('requestId');
+      const db = getDb();
+
+      const allCandidates = await db
+        .select({
+          cvId: schema.hiringCandidates.cv_id,
+          candidateId: schema.hiringCandidates.candidate_id,
+          candidateName: schema.hiringCandidates.full_name,
+          currentTitle: schema.hiringCandidates.current_title,
+          currentCompany: schema.hiringCandidates.current_company,
+          yearsOfExperience: schema.hiringCandidates.years_of_experience,
+          cvSkills: schema.hiringCandidates.cv_skills,
+          englishLevel: schema.hiringCandidates.english_level,
+          salaryExpectation: schema.hiringCandidates.salary_expectation,
+        })
+        .from(schema.hiringCandidates);
+
+      const shortlistResults = await db
+        .select({
+          cvId: schema.hiringShortlistResults.cv_id,
+          fitScore: schema.hiringShortlistResults.fit_score,
+          recommendation: schema.hiringShortlistResults.recommendation,
+          fitSummary: schema.hiringShortlistResults.fit_summary,
+        })
+        .from(schema.hiringShortlistResults)
+        .where(eq(schema.hiringShortlistResults.request_id, requestId));
+
+      const candidates = allCandidates.map((c) => {
+        const result = shortlistResults.find((r) => r.cvId === c.cvId);
+        return {
+          ...c,
+          fitScore: result?.fitScore || null,
+          recommendation: result?.recommendation || null,
+          fitSummary: result?.fitSummary || null,
+        };
+      });
+
+      return c.json({ candidates, total: candidates.length });
+    } catch (error) {
+      console.error('Get candidates error:', error);
+      return c.json({ error: 'Failed to fetch candidates' }, 500);
+    }
+  });
+
+  app.post('/v1/candidates/score', async (c) => {
+    try {
+      const { cvId, jdId, requestId } = await c.req.json();
+      const db = getDb();
+
+      if (!cvId || !jdId || !requestId) {
+        return c.json({ error: 'cvId, jdId, and requestId required' }, 400);
+      }
+
+      const candidate = await db.query.hiringCandidates.findFirst({
+        where: eq(schema.hiringCandidates.cv_id, cvId),
+      });
+
+      if (!candidate) {
+        return c.json({ error: 'Candidate not found' }, 404);
+      }
+
+      const jd = await db.query.hiringJobs.findFirst({
+        where: eq(schema.hiringJobs.jd_id, jdId),
+      });
+
+      if (!jd) {
+        return c.json({ error: 'JD not found' }, 404);
+      }
+
+      const scoreResult = await screenCv({
+        cvId,
+        jdId,
+        requestId,
+        tenantId: '550e8400-e29b-41d4-a716-446655440000',
+        candidateName: candidate.full_name,
+        cvSkills: candidate.cv_skills || '',
+        yearsOfExperience: candidate.years_of_experience || 0,
+        englishLevel: candidate.english_level || 'B2',
+        salaryExpectation: candidate.salary_expectation || 'Negotiable',
+        jdMustHave: jd.must_have_skills || '',
+        jdNiceToHave: jd.nice_to_have_skills || '',
+        jdMinYoe: jd.min_yoe || 0,
+      });
+
+      await db.insert(schema.hiringShortlistResults).values({
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        request_id: requestId,
+        jd_id: jdId,
+        cv_id: cvId,
+        candidate_id: candidate.candidate_id,
+        candidate_name: candidate.full_name,
+        fit_score: String(scoreResult.fitScore),
+        recommendation: String(scoreResult.recommendation),
+        confidence: scoreResult.confidence as unknown as string,
+        fit_summary: scoreResult.fitSummary as unknown as string,
+        gap_summary: scoreResult.gapSummary as unknown as string,
+        category_scores: scoreResult.categoryScores as unknown as Record<string, unknown>,
+        matched_evidence: scoreResult.matchedEvidence as unknown as Record<string, unknown>,
+        flags: scoreResult.flags as unknown as Record<string, unknown>,
+        interview_questions: scoreResult.interviewQuestions as unknown as Record<string, unknown>,
+        follow_up_questions: scoreResult.followUpQuestions as unknown as Record<string, unknown>,
+        reject_reason: scoreResult.rejectReason as unknown as string,
+      });
+
+      return c.json({
+        success: true,
+        cvId,
+        candidateName: candidate.full_name,
+        fitScore: scoreResult.fitScore,
+        recommendation: scoreResult.recommendation,
+        fitSummary: scoreResult.fitSummary,
+        categoryScores: scoreResult.categoryScores,
+        flags: scoreResult.flags,
+        suggestedQuestions: scoreResult.suggestedQuestions,
+        fullPrompt: scoreResult.fullPrompt,
+      });
+    } catch (error) {
+      console.error('Score candidate error:', error);
+      return c.json({ error: 'Failed to score candidate' }, 500);
+    }
+  });
+
   app.post('/v1/shortlist/confirm', async (c) => {
     try {
       const body = await c.req.json();
@@ -775,16 +962,13 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         candidateCount: candidateIds.length,
       });
 
-      // Update request status to 'Shortlist Ready'
-      // (Report data is already persisted in shortlist_results table)
-      const updateResult = await db
+      await db
         .update(schema.hiringRequests)
         .set({ request_status: 'Shortlist Ready' })
         .where(eq(schema.hiringRequests.request_id, requestId));
 
-      console.log('✅ Request status updated to "Shortlist Ready":', updateResult);
+      console.log('✅ Request status updated to "Shortlist Ready"');
 
-      // Get shortlisted candidates from screening results if IDs provided
       let shortlistedCandidates: Array<{
         cvId: string;
         candidateName: string;
@@ -816,10 +1000,6 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
-  /**
-   * GET /v1/shortlist/results/:requestId
-   * Get shortlist screening results for a request
-   */
   app.get('/v1/shortlist/results/:requestId', async (c) => {
     try {
       const requestId = c.req.param('requestId');
@@ -839,7 +1019,6 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         });
       }
 
-      // Categorize results
       const passCandidates = results.filter((r) => r.recommendation === 'Pass');
       const needMoreInfo = results.filter((r) => r.recommendation === 'Need More Info');
       const rejected = results.filter((r) => r.recommendation === 'Reject');
@@ -886,276 +1065,10 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
-  /**
-   * POST /hiring/v1/chat
-   * Chat endpoint - handles streaming responses and saves to thread
-   */
-  app.post('/v1/chat', async (c) => {
-    try {
-      const body = await c.req.json();
-      console.log('📨 POST /v1/chat called with:', {
-        threadId: body.threadId,
-        phase: body.phase,
-        requestId: body.requestId,
-      });
-
-      const parsed = ChatBody.safeParse(body);
-
-      if (!parsed.success) {
-        console.log('❌ Validation failed:', parsed.error);
-        return c.json({ error: 'Invalid request' }, 400);
-      }
-
-      const { threadId, messages, requestId, phase } = parsed.data;
-      console.log('✅ Parsed successfully, will call workflow for phase:', phase);
-      const session = c.get('session') ?? {
-        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
-        user_id: '550e8400-e29b-41d4-a716-446655440001',
-      };
-
-      const db = getDb();
-
-      // Get or create thread
-      type ThreadType = { id: string };
-      let thread: ThreadType | null = null;
-      if (threadId) {
-        const foundThread = await db.query.hiringThreads.findFirst({
-          where: eq(schema.hiringThreads.id, threadId),
-        });
-        if (foundThread) {
-          thread = foundThread;
-        }
-      }
-
-      // If no thread, create one
-      if (!thread) {
-        const newThreadId = `hiring-${crypto.randomUUID()}`;
-        const context = await fetchContext({
-          requestId,
-          tenantId: session.tenant_id,
-        });
-
-        await db.insert(schema.hiringThreads).values({
-          id: newThreadId,
-          tenant_id: session.tenant_id,
-          user_id: session.user_id,
-          request_id: requestId,
-          title: `Hiring - ${context.position}`,
-          context: context as unknown as Record<string, unknown>,
-          current_phase: phase || 'initial',
-          metadata: { createdVia: 'chat' } as unknown as Record<string, unknown>,
-        });
-
-        thread = { id: newThreadId };
-      }
-
-      // Get last user message
-      const lastMessage = messages[messages.length - 1];
-      if (!lastMessage || typeof lastMessage !== 'object') {
-        return c.json({ error: 'Invalid message' }, 400);
-      }
-
-      const messageObj = lastMessage as Record<string, unknown>;
-      const parts = messageObj.parts as unknown[];
-      const userText =
-        ((parts?.[0] as Record<string, unknown>)?.text as string | undefined) ||
-        ((messageObj as Record<string, unknown>).content as string | undefined) ||
-        String(messageObj);
-
-      if (!userText) {
-        return c.json({ error: 'Empty message' }, 400);
-      }
-
-      // Save user message
-      console.log('💾 Saving user message to thread:', thread.id);
-      await db.insert(schema.hiringMessages).values({
-        thread_id: thread.id,
-        role: 'user',
-        content: userText,
-        type: 'text',
-      });
-      console.log('✅ User message saved');
-
-      // Return streaming response
-      return stream(c, async (writer) => {
-        try {
-          let assistantContent = '';
-          let jdDraft: Awaited<ReturnType<typeof draftJd>> | null = null;
-          let scored: Awaited<ReturnType<typeof scoreJd>> | null = null;
-
-          // Handle initial phase - draft JD
-          if (phase === 'initial') {
-            // Always query DB fresh for latest data (don't use cached thread context)
-            console.log(`🔍 Querying DB for requestId: ${requestId}`);
-            const hiringRequest = await db.query.hiringRequests.findFirst({
-              where: eq(schema.hiringRequests.request_id, requestId),
-            });
-
-            if (!hiringRequest) {
-              console.error(`❌ Hiring request ${requestId} not found in database`);
-              await writer.write(
-                `data: ${JSON.stringify({
-                  type: 'error',
-                  content: `❌ Hiring request "${requestId}" not found. Please check the request ID and try again.`,
-                })}\n\n`,
-              );
-              return;
-            }
-
-            console.log(`✓ Found request: ${hiringRequest.position_title}`);
-
-            const context = {
-              position: hiringRequest.position_title,
-              seniorityLevel: hiringRequest.seniority_level || 'Senior',
-              headcount: hiringRequest.headcount_requested || 1,
-              urgency: hiringRequest.urgency_level || 'Medium',
-              teamName: hiringRequest.team_name || 'Engineering',
-              businessContext: hiringRequest.business_justification || '',
-              teamSkillGap: hiringRequest.team_skill_gap_summary || 'Technical skills TBD',
-              keyDeliverables: hiringRequest.key_deliverables || 'TBD',
-              salaryRange: hiringRequest.salary_range || 'Competitive',
-              workMode: hiringRequest.work_mode || 'Hybrid',
-              yoe: hiringRequest.min_yoe?.toString() || '3',
-              englishLevel: hiringRequest.english_level_required || 'B2',
-              benefits: hiringRequest.benefits || '',
-              reportingLine: hiringRequest.requesting_manager || '',
-            };
-
-            // Draft JD
-            const validateSeniority = (
-              val: unknown,
-            ): 'Intern' | 'Junior' | 'Mid' | 'Senior' | 'Manager' | 'C-level' => {
-              const valid = ['Intern', 'Junior', 'Mid', 'Senior', 'Manager', 'C-level'];
-              return valid.includes(val as string)
-                ? (val as 'Intern' | 'Junior' | 'Mid' | 'Senior' | 'Manager' | 'C-level')
-                : 'Senior';
-            };
-            const validateUrgency = (
-              val: unknown,
-            ): 'Low' | 'Medium' | 'High' | 'Critical' | undefined => {
-              const valid = ['Low', 'Medium', 'High', 'Critical'];
-              return valid.includes(val as string)
-                ? (val as 'Low' | 'Medium' | 'High' | 'Critical')
-                : 'Medium';
-            };
-
-            jdDraft = await draftJd({
-              jdId: 'JD-001',
-              requestId,
-              tenantId: session.tenant_id,
-              position: context.position as string,
-              seniorityLevel: validateSeniority(context.seniorityLevel),
-              headcount: (context.headcount as number) || 1,
-              urgency: validateUrgency(context.urgency),
-              teamName: context.teamName as string,
-              businessContext: context.businessContext as string,
-              teamSkillGap: context.teamSkillGap as string,
-              keyDeliverables: context.keyDeliverables as string,
-              salaryRange: context.salaryRange as string,
-              workMode: context.workMode as string,
-              yoe: context.yoe as string,
-              englishLevel: context.englishLevel as string,
-              benefits: context.benefits as string,
-              reportingLine: context.reportingLine as string,
-            });
-
-            // Score JD
-            scored = await scoreJd({
-              jdId: 'JD-001',
-              tenantId: session.tenant_id,
-              jdText: jdDraft.draftText,
-            });
-
-            const scoreStatus = scored.clarityScore >= 70 ? '✅' : '⚠️';
-
-            assistantContent = `## 📋 Job Description: ${context.position}
-
-**📌 Quick Summary**
-- **Team Gap:** ${context.teamSkillGap}
-- **Key Deliverables:** ${context.keyDeliverables}
-- **Salary Range:** ${context.salaryRange}
-
----
-
-${jdDraft.draftText}
-
----
-
-## ⭐ Clarity Score: ${scoreStatus} ${scored.clarityScore}/100
-
-<details>
-<summary><strong>Scoring Breakdown (Click to expand)</strong></summary>
-
-- Title/Position (5%): ${scored.clarityScore >= 5 ? '✓' : '✗'}
-- Responsibilities (20%): ${scored.clarityScore >= 25 ? '✓' : '✗'}
-- Must-Have Skills (25%): ${scored.clarityScore >= 50 ? '✓' : '✗'}
-- Nice-to-Have Skills (10%): ${scored.clarityScore >= 60 ? '✓' : '✗'}
-- YOE Requirement (10%): ${scored.clarityScore >= 70 ? '✓' : '✗'}
-- Salary Range (10%): ${scored.clarityScore >= 80 ? '✓' : '✗'}
-- English Level (5%): ${scored.clarityScore >= 85 ? '✓' : '✗'}
-- Work Mode (5%): ${scored.clarityScore >= 90 ? '✓' : '✗'}
-- Benefits (10%): ${scored.clarityScore >= 100 ? '✓' : '✗'}
-
-</details>
-
-${
-  scored.clarityScore < 70
-    ? `\n⚠️ **Areas to Improve:**\n${(scored.flaggedGaps as unknown as string[]).map((g) => `- ${g}`).join('\n')}`
-    : `\n✅ **JD is ready!** All sections meet quality standards.`
-}`;
-
-            // Update thread phase
-            await db
-              .update(schema.hiringThreads)
-              .set({ current_phase: 'jd-approval' })
-              .where(eq(schema.hiringThreads.id, thread.id));
-          }
-
-          // Save assistant message
-          console.log('💾 Saving assistant message to thread:', thread.id);
-          await db.insert(schema.hiringMessages).values({
-            thread_id: thread.id,
-            role: 'assistant',
-            content: assistantContent,
-            type: 'action',
-          });
-          console.log('✅ Assistant message saved');
-
-          // Stream response
-          const metadata: Record<string, string> = {};
-          if (jdDraft) metadata.draftJdPrompt = jdDraft.fullPrompt;
-          if (scored) metadata.scoreJdPrompt = scored.fullPrompt;
-
-          await writer.write(
-            `data: ${JSON.stringify({
-              type: 'complete',
-              content: assistantContent,
-              ...(Object.keys(metadata).length > 0 && { metadata }),
-            })}\n\n`,
-          );
-        } catch (error) {
-          console.error('Streaming error:', error);
-          await writer.write(
-            'data: ' +
-              JSON.stringify({ type: 'error', content: 'Error during processing' }) +
-              '\n\n',
-          );
-        }
-      });
-    } catch (error) {
-      console.error('Chat endpoint error:', error);
-      return c.json({ error: 'Internal error' }, 500);
-    }
-  });
-
-  /**
-   * GET /v1/candidates
-   * Get all candidates with optional status filter
-   */
   app.get('/v1/candidates', async (c) => {
     try {
       const db = getDb();
-      const status = c.req.query('status'); // active, inactive, or undefined for all
+      const status = c.req.query('status');
 
       let candidates: Record<string, unknown>[];
       if (status && ['active', 'inactive'].includes(status)) {
@@ -1196,10 +1109,6 @@ ${
     }
   });
 
-  /**
-   * POST /v1/candidates
-   * Add a new candidate
-   */
   app.post('/v1/candidates', async (c) => {
     try {
       const db = getDb();
@@ -1221,7 +1130,6 @@ ${
         return c.json({ error: 'cvId, candidateId, fullName required' }, 400);
       }
 
-      // Check if CV already exists
       const existing = await db.query.hiringCandidates.findFirst({
         where: eq(schema.hiringCandidates.cv_id, cvId),
       });
@@ -1275,10 +1183,6 @@ ${
     }
   });
 
-  /**
-   * PUT /v1/candidates/:cvId
-   * Update candidate status or details
-   */
   app.put('/v1/candidates/:cvId', async (c) => {
     try {
       const db = getDb();
@@ -1335,10 +1239,6 @@ ${
     }
   });
 
-  /**
-   * DELETE /v1/candidates/:cvId
-   * Delete a candidate
-   */
   app.delete('/v1/candidates/:cvId', async (c) => {
     try {
       const db = getDb();
@@ -1362,176 +1262,6 @@ ${
     } catch (error) {
       console.error('Delete candidate error:', error);
       return c.json({ error: 'Failed to delete candidate' }, 500);
-    }
-  });
-
-  /**
-   * POST /v1/requests/extract
-   * Extract hiring request details from user description
-   * Returns extracted fields + missing_fields list for validation
-   */
-  app.post('/v1/requests/extract', async (c) => {
-    try {
-      const body = await c.req.json();
-      const { description } = body as Record<string, unknown>;
-
-      if (!description || typeof description !== 'string') {
-        return c.json({ error: 'Description is required' }, 400);
-      }
-
-      console.log('📝 Extracting hiring request details from description...');
-      const extracted = await extractRequestDetails({ description });
-
-      console.log('✅ Extraction complete:', extracted);
-
-      // Check if critical fields are missing
-      const hasMissingRequired = extracted.missing_fields && extracted.missing_fields.length > 0;
-
-      return c.json({
-        success: true,
-        extracted,
-        hasMissingRequired,
-        missingFields: extracted.missing_fields || [],
-        message: hasMissingRequired
-          ? `Extracted ${Object.keys(extracted).length - 1} fields, but ${extracted.missing_fields?.length} required fields are missing. Please provide: ${extracted.missing_fields?.join(', ')}`
-          : 'All required fields extracted successfully',
-      });
-    } catch (error) {
-      console.error('❌ Extraction error:', error);
-      return c.json({ error: 'Failed to extract hiring request details' }, 500);
-    }
-  });
-
-  /**
-   * POST /v1/requests
-   * Create a new hiring request from extracted or user-provided data
-   * Validates that all required fields are present before creating
-   */
-  app.post('/v1/requests', async (c) => {
-    try {
-      const body = await c.req.json();
-      const {
-        position_title,
-        team_name,
-        urgency_level,
-        seniority_level,
-        headcount_requested,
-        business_justification,
-        team_skill_gap_summary,
-        key_deliverables,
-        requesting_manager,
-        salary_range,
-        work_mode,
-        yoe,
-        english_level,
-        benefits,
-      } = body as Record<string, unknown>;
-
-      // Validate REQUIRED fields (cannot be empty or null)
-      const requiredFields = {
-        position_title,
-        team_name,
-        key_deliverables,
-      };
-
-      const missingRequired = Object.entries(requiredFields)
-        .filter(([, value]) => !value || (typeof value === 'string' && value.trim() === ''))
-        .map(([key]) => key);
-
-      if (missingRequired.length > 0) {
-        return c.json(
-          {
-            error: `Required fields missing: ${missingRequired.join(', ')}`,
-            missingFields: missingRequired,
-          },
-          400,
-        );
-      }
-
-      // Warn about RECOMMENDED fields that are missing but allow creation
-      const recommendedFields = {
-        urgency_level,
-        team_skill_gap_summary,
-        salary_range,
-      };
-
-      const missingRecommended = Object.entries(recommendedFields)
-        .filter(([, value]) => !value || (typeof value === 'string' && value.trim() === ''))
-        .map(([key]) => key);
-
-      const session = c.get('session') ?? {
-        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
-        user_id: '550e8400-e29b-41d4-a716-446655440001',
-      };
-
-      const db = getDb();
-
-      // Generate unique request ID
-      const timestamp = Date.now().toString().slice(-6);
-      const requestId = `REQ-${timestamp}`;
-
-      console.log(`💾 Creating hiring request ${requestId}...`);
-      console.log('📋 Provided fields:', Object.keys(body).join(', '));
-      if (missingRecommended.length > 0) {
-        console.log('⚠️  Missing recommended fields:', missingRecommended.join(', '));
-      }
-
-      // Validate enum values
-      const validUrgencies = ['Low', 'Medium', 'High', 'Critical'];
-      const providedUrgency = String(urgency_level || 'Medium');
-      if (!validUrgencies.includes(providedUrgency)) {
-        console.warn(`⚠️ Invalid urgency_level "${providedUrgency}", defaulting to "Medium"`);
-      }
-
-      // Validate seniority level enum
-      const validSeniorityLevels = ['Intern', 'Junior', 'Mid', 'Senior', 'Manager', 'C-level'];
-      const providedSeniority = String(seniority_level || 'Senior');
-      if (!validSeniorityLevels.includes(providedSeniority)) {
-        console.warn(`⚠️ Invalid seniority_level "${providedSeniority}", defaulting to "Senior"`);
-      }
-
-      // Insert into database
-      await db.insert(schema.hiringRequests).values({
-        tenant_id: session.tenant_id as string,
-        request_id: requestId,
-        position_title: String(position_title),
-        team_name: String(team_name),
-        seniority_level: validSeniorityLevels.includes(providedSeniority)
-          ? providedSeniority
-          : 'Senior',
-        urgency_level: validUrgencies.includes(providedUrgency) ? providedUrgency : 'Medium',
-        headcount_requested: Number(headcount_requested) || 1,
-        business_justification: String(business_justification || ''),
-        team_skill_gap_summary: String(team_skill_gap_summary || ''),
-        key_deliverables: String(key_deliverables),
-        requesting_manager: String(requesting_manager || ''),
-        hr_owner: session.user_id as string,
-        approval_status: 'Pending',
-        request_status: 'New',
-        benefits: String(benefits || ''),
-        salary_range: String(salary_range || ''),
-        work_mode: String(work_mode || ''),
-        min_yoe: yoe ? Number(yoe) : undefined,
-        english_level_required: String(english_level || ''),
-      });
-
-      console.log(`✅ Hiring request ${requestId} created successfully`);
-
-      return c.json({
-        success: true,
-        message: `Hiring request ${requestId} created`,
-        requestId,
-        warnings:
-          missingRecommended.length > 0
-            ? {
-                missingRecommended,
-                note: `These fields are missing but optional. Consider adding ${missingRecommended.join(', ')} for better JD generation.`,
-              }
-            : undefined,
-      });
-    } catch (error) {
-      console.error('❌ Create request error:', error);
-      return c.json({ error: 'Failed to create hiring request' }, 500);
     }
   });
 }

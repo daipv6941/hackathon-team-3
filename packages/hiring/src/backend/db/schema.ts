@@ -182,7 +182,7 @@ export const hiringThreads = hiringSchema.table('threads', {
   id: varchar('id', { length: 100 }).primaryKey(), // hiring-<uuid>
   tenant_id: uuid('tenant_id').notNull(),
   user_id: uuid('user_id').notNull(), // Identity.user_id of TA
-  request_id: varchar('request_id', { length: 50 }).notNull(), // Which hiring request this thread is for
+  request_id: varchar('request_id', { length: 50 }), // Which hiring request this thread is for (optional until user selects one)
   title: varchar('title', { length: 255 }), // e.g., "Senior Data Engineer - REQ-011"
   context: jsonb('context'), // { position, teamSkillGap, keyDeliverables, salaryRange }
   current_phase: varchar('current_phase', { length: 30 }).default('initial'), // initial, jd-creation, jd-approval, cv-screening, confirmation, complete
