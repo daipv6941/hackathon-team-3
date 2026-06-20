@@ -281,7 +281,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         return c.json({ error: 'Hiring request not found' }, 404);
       }
 
-      const context = await fetchContext({ requestId, tenantId: session.tenant_id });
+      const context = await fetchContext({ requestId, tenantId: session.tenant_id }, db);
 
       const jdId = `JD-${requestId.replace('REQ-', '')}-${Date.now().toString().slice(-6)}`;
 
@@ -295,7 +295,13 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       return stream(c, async (writer) => {
         try {
           await writer.write(
-            `data: ${JSON.stringify({ type: 'complete', content: jd.draftText })}\n\n`,
+            `data: ${JSON.stringify({
+              type: 'complete',
+              content: jd.draftText,
+              metadata: {
+                draftJdPrompt: jd.fullPrompt,
+              },
+            })}\n\n`,
           );
         } catch (error) {
           console.error('Stream error:', error);

@@ -1,5 +1,6 @@
 import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 /**
@@ -163,28 +164,52 @@ const MOCK_REQUESTS: Record<
  * Tool implementations with real LLM calls
  */
 
-export async function fetchContext(input: z.infer<typeof FetchContextInputSchema>) {
+export async function fetchContext(
+  input: z.infer<typeof FetchContextInputSchema>,
+  db?: any,
+): Promise<Record<string, unknown>> {
   console.log('fetchContext:', input);
 
-  const request = MOCK_REQUESTS[input.requestId];
+  // Try to get from database if provided
+  if (db) {
+    try {
+      const request = await db.query.hiringRequests.findFirst({
+        where: eq(db.schema.hiringRequests.request_id, input.requestId),
+      });
 
+      if (!request) {
+        throw new Error(`Hiring request not found: ${input.requestId}`);
+      }
+
+      return {
+        position: request.position_title,
+        teamSkillGap: request.team_skill_gap_summary || '',
+        keyDeliverables: request.key_deliverables || '',
+        salaryRange: request.salary_range || 'Competitive',
+        seniorityLevel: request.seniority_level || 'Senior',
+        urgency: request.urgency_level || 'Medium',
+        headcount: request.headcount_requested || 1,
+        teamName: request.team_name || 'Engineering',
+        businessContext: request.business_justification || '',
+        workMode: request.work_mode || 'Hybrid',
+        yoe: request.min_yoe?.toString() || '3',
+        englishLevel: request.english_level_required || 'B2',
+        benefits: request.benefits || '',
+        reportingLine: '',
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found')) {
+        throw error;
+      }
+      console.error('Error fetching from database:', error);
+      throw new Error(`Failed to fetch hiring request: ${input.requestId}`);
+    }
+  }
+
+  // Fallback to MOCK_REQUESTS only for testing
+  const request = MOCK_REQUESTS[input.requestId];
   if (!request) {
-    return {
-      position: 'Engineering Role',
-      teamSkillGap: 'Technical skills TBD',
-      keyDeliverables: 'TBD',
-      salaryRange: 'Competitive',
-      seniorityLevel: 'Senior',
-      urgency: 'Medium',
-      headcount: 1,
-      teamName: 'Engineering',
-      businessContext: '',
-      workMode: 'Hybrid',
-      yoe: '3',
-      englishLevel: 'B2',
-      benefits: '',
-      reportingLine: '',
-    };
+    throw new Error(`Hiring request not found: ${input.requestId}`);
   }
 
   return {
