@@ -56,7 +56,12 @@ export function HiringComposer() {
 
         const decoder = new TextDecoder();
         let buffer = '';
-        const messages: Array<{ role: string; content: string; type: string; metadata?: any }> = [];
+        const messages: Array<{
+          role: string;
+          content: string;
+          type: string;
+          metadata?: Record<string, unknown>;
+        }> = [];
 
         while (true) {
           const { done, value } = await reader.read();
@@ -94,7 +99,14 @@ export function HiringComposer() {
         // Add both messages to state and save to database
         for (const msg of messages) {
           console.log(`✅ Adding ${msg.type} message to state`);
-          actions.addMessage(msg as any);
+          actions.addMessage(
+            msg as {
+              role: 'user' | 'assistant';
+              content: string;
+              type?: 'text' | 'action' | 'result';
+              metadata?: Record<string, unknown>;
+            },
+          );
 
           // Save message to database
           await fetch('/api/hiring/v1/messages', {
@@ -249,11 +261,13 @@ export function HiringComposer() {
 
     if (savedThreadId.startsWith('hiring-')) {
       console.log('📂 Using pre-created thread from request selection:', savedThreadId);
-      setThreadId(savedThreadId);
+      queueMicrotask(() => setThreadId(savedThreadId));
     } else {
       console.log('📂 Loading previously saved thread:', savedThreadId);
-      setIsLoadingExistingThread(true);
-      setThreadId(savedThreadId);
+      queueMicrotask(() => {
+        setIsLoadingExistingThread(true);
+        setThreadId(savedThreadId);
+      });
     }
   }, [state.selectedFlow]);
 
@@ -266,7 +280,7 @@ export function HiringComposer() {
       !isLoadingExistingThread
     ) {
       console.log('✅ Creating thread for request:', state.selectedRequestId);
-      createThread();
+      queueMicrotask(() => createThread());
     }
   }, [
     state.currentPhase,

@@ -8,6 +8,16 @@ import { HiringSelection } from './hiring-selection';
 import { JDScoringBreakdown } from './jd-scoring-breakdown';
 import { useHiringChat } from './use-hiring-chat';
 
+interface ScoringBreakdownMetadata {
+  clarityScore?: number;
+  status?: string;
+  categoryScores?: Record<string, number>;
+  flaggedGaps?: string[];
+  requiredRevisions?: string[];
+  confidence?: string;
+  iterations?: number;
+}
+
 export function HiringTranscript() {
   const { state } = useHiringChat();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -416,15 +426,17 @@ ${result.summary}`;
         {/* Show scoring breakdown for 'result' type messages with clarityScore */}
         {!isUser &&
         message.type === 'result' &&
-        (message.metadata as Record<string, unknown> | undefined)?.clarityScore ? (
+        (message.metadata as ScoringBreakdownMetadata | undefined)?.clarityScore ? (
           <JDScoringBreakdown
-            clarityScore={(message.metadata as Record<string, any>).clarityScore || 0}
-            status={(message.metadata as Record<string, any>).status || 'Needs Revision'}
-            categoryScores={(message.metadata as Record<string, any>).categoryScores || {}}
-            flaggedGaps={(message.metadata as Record<string, any>).flaggedGaps || []}
-            requiredRevisions={(message.metadata as Record<string, any>).requiredRevisions || []}
-            confidence={(message.metadata as Record<string, any>).confidence || 'Medium'}
-            iterations={(message.metadata as Record<string, any>).iterations || 0}
+            clarityScore={(message.metadata as ScoringBreakdownMetadata).clarityScore || 0}
+            status={(message.metadata as ScoringBreakdownMetadata).status || 'Needs Revision'}
+            categoryScores={(message.metadata as ScoringBreakdownMetadata).categoryScores || {}}
+            flaggedGaps={(message.metadata as ScoringBreakdownMetadata).flaggedGaps || []}
+            requiredRevisions={
+              (message.metadata as ScoringBreakdownMetadata).requiredRevisions || []
+            }
+            confidence={(message.metadata as ScoringBreakdownMetadata).confidence || 'Medium'}
+            iterations={(message.metadata as ScoringBreakdownMetadata).iterations || 0}
           />
         ) : null}
 
