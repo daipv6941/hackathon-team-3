@@ -286,7 +286,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       const jdId = `JD-${requestId.replace('REQ-', '')}-${Date.now().toString().slice(-6)}`;
 
       const jd = await draftJd({
-        ...context,
+        ...(context as any),
         jdId,
         requestId,
         tenantId: session.tenant_id,
@@ -378,7 +378,6 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
       const extracted = await extractRequestDetails({
         description,
-        mastra: deps.mastra,
       });
 
       return c.json({ extracted });
