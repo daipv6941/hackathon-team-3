@@ -18,6 +18,42 @@ interface ScoringBreakdownMetadata {
   iterations?: number;
 }
 
+interface ScoredCandidate {
+  cvId: string;
+  candidateName: string;
+  fitScore: number;
+  recommendation: 'Pass' | 'Reject' | 'Need More Info';
+  fitSummary: string;
+  gapSummary: string;
+  categoryScores: Record<string, number>;
+  matchedEvidence: string[];
+  flags: string[];
+  interviewQuestions: string[];
+  followUpQuestions: string[];
+  rejectReason: string;
+}
+
+interface BatchScreeningResult {
+  type: 'result';
+  content: string;
+  metadata: {
+    reportId: string;
+    requestId: string;
+    jdId: string;
+    position: string;
+    totalCandidates: number;
+    statistics: {
+      passCandidates: number;
+      passPercentage: number;
+      needMoreInfoCandidates: number;
+      needMoreInfoPercentage: number;
+      rejectCandidates: number;
+      rejectPercentage: number;
+    };
+    scoredCandidates: ScoredCandidate[];
+  };
+}
+
 export function HiringTranscript() {
   const { state } = useHiringChat();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -225,7 +261,7 @@ Ready to screen candidates?`,
 
       const decoder = new TextDecoder();
       let buffer = '';
-      let reportData: any = null;
+      let reportData: BatchScreeningResult | null = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -238,7 +274,7 @@ Ready to screen candidates?`,
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6));
+              const data = JSON.parse(line.slice(6)) as BatchScreeningResult;
               // Only collect result messages from batch screening
               if (data.type === 'result' && data.metadata) {
                 reportData = data;
@@ -250,7 +286,7 @@ Ready to screen candidates?`,
         }
       }
 
-      if (!reportData || !reportData.metadata) {
+      if (!reportData?.metadata) {
         throw new Error('No screening results returned');
       }
 
@@ -261,17 +297,19 @@ Ready to screen candidates?`,
       const candidates = result.scoredCandidates || [];
 
       // Categorize candidates
-      const passCandidates = candidates.filter((c: any) => c.recommendation === 'Pass');
+      const passCandidates = candidates.filter((c: ScoredCandidate) => c.recommendation === 'Pass');
       const needMoreInfoCandidates = candidates.filter(
-        (c: any) => c.recommendation === 'Need More Info',
+        (c: ScoredCandidate) => c.recommendation === 'Need More Info',
       );
-      const rejectCandidates = candidates.filter((c: any) => c.recommendation === 'Reject');
+      const rejectCandidates = candidates.filter(
+        (c: ScoredCandidate) => c.recommendation === 'Reject',
+      );
 
       const reportHtml = `
 ## 📊 Shortlist Report
 
 **Position:** ${result.position || 'TBD'}
-**Total Candidates:** ${stats.totalCandidates || result.totalCandidates}
+**Total Candidates:** ${result.totalCandidates}
 
 ### 📈 Summary by Recommendation
 
@@ -285,7 +323,7 @@ ${
 
 ${passCandidates
   .map(
-    (c: any) => `
+    (c: ScoredCandidate) => `
 **${c.candidateName}** - Score: ${c.fitScore}/100
 - Summary: ${c.fitSummary}
 - Interview Questions:
@@ -303,7 +341,7 @@ ${
 
 ${needMoreInfoCandidates
   .map(
-    (c: any) => `
+    (c: ScoredCandidate) => `
 **${c.candidateName}** - Score: ${c.fitScore}/100
 - Summary: ${c.fitSummary}
 - Follow-up Questions:
@@ -320,7 +358,7 @@ ${
     ? `### ❌ REJECT Candidates
 
 ${rejectCandidates
-  .map((c: any) => `- **${c.candidateName}** (${c.fitScore}/100): ${c.rejectReason}`)
+  .map((c: ScoredCandidate) => `- **${c.candidateName}** (${c.fitScore}/100): ${c.rejectReason}`)
   .join('\n')}
 `
     : ''
