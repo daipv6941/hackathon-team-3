@@ -249,7 +249,7 @@ ${jdContent}`,
     actions.setSelectedRequest('creating');
   };
 
-  const handleDeleteThread = async (threadId: string, e: React.MouseEvent) => {
+  const _handleDeleteThread = async (threadId: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
     if (!confirm('Are you sure you want to delete this conversation?')) {

@@ -561,7 +561,7 @@ ${data.team_skill_gap_summary || 'TBD'}
       console.error('Chat error:', error);
       actions.addMessage({
         role: 'assistant',
-        content: '❌ Error: ' + String(error),
+        content: `❌ Error: ${String(error)}`,
         type: 'text',
       });
     } finally {

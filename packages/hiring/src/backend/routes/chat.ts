@@ -1,18 +1,12 @@
 import type { Mastra } from '@mastra/core';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import type { Hono } from 'hono';
 import { stream } from 'hono/streaming';
 import type { Pool } from 'pg';
 import { z } from 'zod';
 import * as schema from '../db/index.ts';
-import {
-  draftJd,
-  extractRequestDetails,
-  fetchContext,
-  reviseJdWithFeedback,
-  scoreJd,
-} from '../orchestration.ts';
+import { draftJd, extractRequestDetails, fetchContext } from '../orchestration.ts';
 
 export interface HiringRouteDeps {
   mastra: Mastra;
@@ -28,7 +22,7 @@ export interface HiringRouteEnv {
   };
 }
 
-const ChatBody = z.object({
+const _ChatBody = z.object({
   threadId: z.string().optional(),
   messages: z.array(z.unknown()),
   requestId: z.string(),
@@ -148,8 +142,8 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       };
 
       const db = getDb();
-      const limit = parseInt(c.req.query('limit') || '10');
-      const offset = parseInt(c.req.query('offset') || '0');
+      const limit = parseInt(c.req.query('limit') || '10', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
 
       const threads = await db
         .select()
@@ -407,7 +401,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
       const requestId = `REQ-${Date.now().toString().slice(-5)}`;
 
-      const result = await db
+      const _result = await db
         .insert(schema.hiringRequests)
         .values({
           tenant_id: session.tenant_id,
@@ -415,13 +409,13 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
           position_title: body.position_title || 'TBD',
           team_name: body.team_name,
           urgency_level: body.urgency_level || 'Medium',
-          headcount_requested: parseInt(body.headcount_requested) || 1,
+          headcount_requested: parseInt(body.headcount_requested, 10) || 1,
           business_justification: body.business_justification,
           team_skill_gap_summary: body.team_skill_gap_summary,
           key_deliverables: body.key_deliverables,
           salary_range: body.salary_range,
           work_mode: body.work_mode,
-          min_yoe: body.min_yoe ? parseInt(body.min_yoe) : undefined,
+          min_yoe: body.min_yoe ? parseInt(body.min_yoe, 10) : undefined,
           english_level_required: body.english_level_required,
           hr_owner: session.user_id,
           request_status: 'New',
