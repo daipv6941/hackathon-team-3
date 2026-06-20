@@ -249,34 +249,6 @@ ${jdContent}`,
     actions.setSelectedRequest('creating');
   };
 
-  const _handleDeleteThread = async (threadId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-
-    if (!confirm('Are you sure you want to delete this conversation?')) {
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/hiring/v1/threads/${threadId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to delete thread');
-
-      setRequests(requests.filter((t) => t.id !== threadId));
-
-      const currentThreadId = localStorage.getItem('currentThreadId');
-      if (currentThreadId === threadId) {
-        actions.clearMessages();
-        localStorage.removeItem('currentThreadId');
-      }
-    } catch (error) {
-      console.error('Delete request error:', error);
-      alert('Failed to delete request');
-    }
-  };
-
   const handleSelectId = (id: string) => {
     setSelectedId(id);
   };
