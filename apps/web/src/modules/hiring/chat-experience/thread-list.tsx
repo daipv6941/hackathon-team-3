@@ -220,7 +220,7 @@ export function ThreadList() {
   const currentThreadId = localStorage.getItem('currentThreadId');
 
   return (
-    <div className="flex h-full flex-col border-r border-hairline bg-surface-1">
+    <div className="flex h-full w-80 flex-col border-r border-hairline bg-surface-1">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-hairline p-4">
         <h2 className="text-sm font-semibold text-ink">Chat</h2>
