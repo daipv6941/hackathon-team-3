@@ -211,16 +211,18 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     try {
       const threadId = c.req.param('id');
       const body = await c.req.json();
-      const { title, request_id } = body as Record<string, unknown>;
+      const { title, request_id, current_phase } = body as Record<string, unknown>;
 
       const db = getDb();
 
+      const updateData: Record<string, string> = {};
+      if (title) updateData.title = String(title);
+      if (request_id) updateData.request_id = String(request_id);
+      if (current_phase) updateData.current_phase = String(current_phase);
+
       await db
         .update(schema.hiringThreads)
-        .set({
-          ...(title && { title: String(title) }),
-          ...(request_id && { request_id: String(request_id) }),
-        })
+        .set(updateData as any)
         .where(eq(schema.hiringThreads.id, threadId));
 
       return c.json({ success: true, message: 'Thread updated' });
