@@ -2,6 +2,7 @@ import { openai } from '@ai-sdk/openai';
 import { generateText } from 'ai';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
+import * as schema from './db/index.ts';
 
 /**
  * HireAssist Orchestration
@@ -164,17 +165,34 @@ const MOCK_REQUESTS: Record<
  * Tool implementations with real LLM calls
  */
 
+interface FetchContextResult {
+  position: string;
+  teamSkillGap: string;
+  keyDeliverables: string;
+  salaryRange: string;
+  seniorityLevel: string;
+  urgency: string;
+  headcount: number;
+  teamName: string;
+  businessContext: string;
+  workMode: string;
+  yoe: string;
+  englishLevel: string;
+  benefits: string;
+  reportingLine: string;
+}
+
 export async function fetchContext(
   input: z.infer<typeof FetchContextInputSchema>,
   db?: any,
-): Promise<Record<string, unknown>> {
+): Promise<FetchContextResult> {
   console.log('fetchContext:', input);
 
   // Try to get from database if provided
   if (db) {
     try {
       const request = await db.query.hiringRequests.findFirst({
-        where: eq(db.schema.hiringRequests.request_id, input.requestId),
+        where: eq(schema.hiringRequests.request_id, input.requestId),
       });
 
       if (!request) {

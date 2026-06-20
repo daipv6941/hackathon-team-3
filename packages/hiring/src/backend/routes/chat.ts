@@ -57,12 +57,12 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       let title = threadTitle || `Hiring - ${flow || 'New'}`;
 
       if (reqId && typeof reqId === 'string') {
-        const fetchedContext = (await fetchContext({
+        const fetchedContext = await fetchContext({
           requestId: reqId,
           tenantId: session.tenant_id,
-        })) as Record<string, unknown>;
+        });
         if (Object.keys(fetchedContext).length > 0) {
-          context = fetchedContext;
+          context = fetchedContext as unknown as Record<string, unknown>;
         }
         title =
           typeof threadTitle === 'string' ? threadTitle : `Hiring - ${fetchedContext.position}`;
