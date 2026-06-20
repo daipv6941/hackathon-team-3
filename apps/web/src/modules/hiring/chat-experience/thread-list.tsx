@@ -142,8 +142,20 @@ export function ThreadList() {
       if (!response.ok) throw new Error('Failed to load thread');
       const data = await response.json();
 
-      // Load thread data
-      actions.setSelectedRequest(thread.request_id);
+      // Load thread data with metadata
+      const threadData = data.thread || {};
+      const metadata = (threadData.metadata as Record<string, unknown>) || {};
+      const flow = metadata.flow as string | undefined;
+
+      if (flow) {
+        actions.setSelectedFlow(flow as 'jd-draft' | 'cv-shortlist');
+        localStorage.setItem('selectedFlow', flow);
+      }
+
+      if (thread.request_id) {
+        actions.setSelectedRequest(thread.request_id);
+      }
+
       const validPhases = [
         'initial',
         'complete',
@@ -179,7 +191,6 @@ export function ThreadList() {
       }));
 
       actions.setMessages(messages);
-      // Store current thread ID in state (you may need to add this to provider)
       localStorage.setItem('currentThreadId', thread.id);
     } catch (error) {
       console.error('Load thread error:', error);

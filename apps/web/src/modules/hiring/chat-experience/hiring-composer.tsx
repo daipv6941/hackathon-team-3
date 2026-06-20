@@ -85,19 +85,37 @@ export function HiringComposer() {
         }
 
         if (completedContent) {
-          actions.addMessage({
-            role: 'assistant',
+          const jdMessage = {
+            role: 'assistant' as const,
             content: completedContent,
-            type: 'action',
-          });
+            type: 'action' as const,
+          };
+          actions.addMessage(jdMessage);
+
+          // Save JD message to database for this thread
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ threadId: tid, ...jdMessage }),
+          }).catch((e) => console.error('Failed to save JD message:', e));
         }
       } catch (error) {
         console.error('Workflow error:', error);
-        actions.addMessage({
-          role: 'assistant',
+        const errorMessage = {
+          role: 'assistant' as const,
           content: '❌ Error starting JD creation. Please try again.',
-          type: 'text',
-        });
+          type: 'text' as const,
+        };
+        actions.addMessage(errorMessage);
+
+        // Save error message to database
+        await fetch('/api/hiring/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ threadId: tid, ...errorMessage }),
+        }).catch((e) => console.error('Failed to save error message:', e));
       } finally {
         actions.setLoading(false);
       }

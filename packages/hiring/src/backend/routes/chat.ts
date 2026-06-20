@@ -264,15 +264,19 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
       const context = await fetchContext({ requestId, tenantId: session.tenant_id });
 
+      const jdId = `JD-${requestId.replace('REQ-', '')}-${Date.now().toString().slice(-6)}`;
+
       const jd = await draftJd({
-        context,
-        mastra: deps.mastra,
+        ...context,
+        jdId,
+        requestId,
+        tenantId: session.tenant_id,
       });
 
       return stream(c, async (writer) => {
         try {
           await writer.write(
-            `data: ${JSON.stringify({ type: 'complete', content: jd.output })}\n\n`,
+            `data: ${JSON.stringify({ type: 'complete', content: jd.draftText })}\n\n`,
           );
         } catch (error) {
           console.error('Stream error:', error);

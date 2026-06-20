@@ -18,7 +18,8 @@ export function HiringTranscript() {
     }
   }, []);
 
-  if (state.currentPhase === 'selection') {
+  // Only show workflow selector if no flow is selected yet
+  if (state.currentPhase === 'selection' && !state.selectedFlow) {
     return <HiringSelection />;
   }
 
