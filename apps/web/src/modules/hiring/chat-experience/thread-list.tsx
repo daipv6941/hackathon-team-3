@@ -17,24 +17,52 @@ export function ThreadList() {
   const { actions } = useHiringChat();
   const [threads, setThreads] = useState<Thread[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [limit] = useState(10);
   const loadedRef = useRef(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  const loadThreads = async () => {
+  const loadThreads = async (loadMore = false) => {
     try {
-      setIsLoading(true);
-      const response = await fetch('/api/hiring/v1/threads', {
-        method: 'GET',
-        credentials: 'include',
-      });
+      if (loadMore) {
+        setIsLoadingMore(true);
+      } else {
+        setIsLoading(true);
+      }
+
+      const currentOffset = loadMore ? offset + limit : 0;
+      const response = await fetch(
+        `/api/hiring/v1/threads?limit=${limit}&offset=${currentOffset}`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        },
+      );
 
       if (!response.ok) throw new Error('Failed to load threads');
       const data = await response.json();
-      setThreads(data.threads || []);
+      const newThreads = data.threads || [];
+
+      if (loadMore) {
+        setThreads((prev) => [...prev, ...newThreads]);
+        setOffset(currentOffset);
+      } else {
+        setThreads(newThreads);
+        setOffset(0);
+      }
+
+      setHasMore(newThreads.length === limit);
     } catch (error) {
       console.error('Load threads error:', error);
     } finally {
-      setIsLoading(false);
+      if (loadMore) {
+        setIsLoadingMore(false);
+      } else {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -43,19 +71,31 @@ export function ThreadList() {
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
-    loadThreads();
+    loadThreads(false);
   }, []);
 
   // Reload threads when new thread is created
   // biome-ignore lint/correctness/useExhaustiveDependencies: loadThreads called in event handler
   useEffect(() => {
     const handleThreadCreated = () => {
-      loadThreads();
+      loadThreads(false);
     };
 
     window.addEventListener('hiring:thread-created', handleThreadCreated);
     return () => window.removeEventListener('hiring:thread-created', handleThreadCreated);
   }, []);
+
+  // Handle infinite scroll
+  const handleScroll = () => {
+    if (!scrollContainerRef.current || isLoadingMore || !hasMore) return;
+
+    const element = scrollContainerRef.current;
+    const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+
+    if (isNearBottom) {
+      loadThreads(true);
+    }
+  };
 
   const handleCreateNew = () => {
     actions.clearMessages();
@@ -127,11 +167,15 @@ export function ThreadList() {
         role: string;
         content: string;
         type?: string;
+        thinking_content?: string;
+        metadata?: Record<string, unknown>;
       }
       const messages = (data.messages || []).map((msg: MessageData) => ({
         role: msg.role,
         content: msg.content,
         type: msg.type || 'text',
+        ...(msg.thinking_content && { thinkingContent: msg.thinking_content }),
+        ...(msg.metadata && { metadata: msg.metadata }),
       }));
 
       actions.setMessages(messages);
@@ -191,7 +235,11 @@ export function ThreadList() {
       </div>
 
       {/* Threads List */}
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="min-w-0 flex-1 overflow-y-auto"
+      >
         {isLoading ? (
           <div className="p-4 text-xs text-ink-subtle">Loading...</div>
         ) : filteredThreads.length === 0 ? (
@@ -199,47 +247,59 @@ export function ThreadList() {
             {threads.length === 0 ? 'No threads yet' : 'No matching threads'}
           </div>
         ) : (
-          <div className="flex flex-col gap-2 p-2">
-            {filteredThreads.map((thread) => (
-              <div
-                key={thread.id}
-                className={`group rounded-lg transition-colors ${
-                  currentThreadId === thread.id ? 'bg-surface-2' : 'hover:bg-surface-2'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => handleSelectThread(thread)}
-                  className={`w-full flex flex-col items-start gap-1 px-3 py-2 text-left text-xs ${
-                    currentThreadId === thread.id ? 'text-ink' : 'text-ink-subtle'
+          <>
+            <div className="flex flex-col gap-2 p-2">
+              {filteredThreads.map((thread) => (
+                <div
+                  key={thread.id}
+                  className={`group rounded-lg transition-colors overflow-hidden ${
+                    currentThreadId === thread.id ? 'bg-surface-2' : 'hover:bg-surface-2'
                   }`}
                 >
-                  <div className="flex w-full items-center gap-2">
-                    <MessageSquare className="h-3 w-3 flex-shrink-0" />
-                    <span className="truncate font-medium flex-1">{thread.title}</span>
-                    <span className="text-xs text-ink-subtler flex-shrink-0">
-                      {formatDate(thread.created_at)}
-                    </span>
-                  </div>
-                  <div className="pl-5 text-xs text-ink-subtler">
-                    {thread.request_id} • {thread.current_phase}
-                  </div>
-                </button>
+                  <div className="flex items-stretch">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectThread(thread)}
+                      className={`flex-1 flex flex-col items-start gap-1 px-3 py-2 text-left text-xs cursor-pointer ${
+                        currentThreadId === thread.id ? 'text-ink' : 'text-ink-subtle'
+                      }`}
+                    >
+                      <div className="flex w-full items-center gap-2">
+                        <MessageSquare className="h-3 w-3 flex-shrink-0" />
+                        <span className="truncate font-medium flex-1">{thread.title}</span>
+                        <span className="text-xs text-ink-subtler flex-shrink-0">
+                          {formatDate(thread.created_at)}
+                        </span>
+                      </div>
+                      <div className="pl-5 text-xs text-ink-subtler">
+                        {thread.request_id} • {thread.current_phase}
+                      </div>
+                    </button>
 
-                {/* Delete button on hover */}
-                <div className="hidden group-hover:flex items-center justify-end gap-1 px-2 pb-1">
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteThread(thread.id, e)}
-                    className="p-1 rounded hover:bg-surface-3 text-ink-subtler hover:text-ink transition-colors"
-                    title="Delete conversation"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                    {/* Delete button slides in from right */}
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteThread(thread.id, e)}
+                      className="flex items-center justify-center px-2 transform translate-x-full group-hover:translate-x-0 transition-transform duration-200 ease-out text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-r cursor-pointer"
+                      title="Delete conversation"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+
+            {/* Loading indicator for infinite scroll */}
+            {isLoadingMore && (
+              <div className="p-4 text-center text-xs text-ink-subtle">Loading more...</div>
+            )}
+
+            {/* End of list message */}
+            {!hasMore && threads.length > 0 && (
+              <div className="p-4 text-center text-xs text-ink-subtler">No more conversations</div>
+            )}
+          </>
         )}
       </div>
     </div>
