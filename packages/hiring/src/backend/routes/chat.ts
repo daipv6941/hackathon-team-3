@@ -207,6 +207,29 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     }
   });
 
+  app.patch('/v1/threads/:id', async (c) => {
+    try {
+      const threadId = c.req.param('id');
+      const body = await c.req.json();
+      const { title, request_id } = body as Record<string, unknown>;
+
+      const db = getDb();
+
+      await db
+        .update(schema.hiringThreads)
+        .set({
+          ...(title && { title: String(title) }),
+          ...(request_id && { request_id: String(request_id) }),
+        })
+        .where(eq(schema.hiringThreads.id, threadId));
+
+      return c.json({ success: true, message: 'Thread updated' });
+    } catch (error) {
+      console.error('Update thread error:', error);
+      return c.json({ error: 'Failed to update thread' }, 500);
+    }
+  });
+
   app.get('/v1/requests', async (c) => {
     try {
       const session = c.get('session') ?? {

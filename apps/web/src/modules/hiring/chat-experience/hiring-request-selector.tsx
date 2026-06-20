@@ -122,6 +122,19 @@ export function HiringRequestSelector() {
       actions.setPhase('initial');
     }
 
+    // Update thread title with request info
+    if (threadId) {
+      await fetch(`/api/hiring/v1/threads/${threadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          title: `${request.positionTitle} — ${request.requestId}`,
+          request_id: request.requestId,
+        }),
+      }).catch((e) => console.error('Failed to update thread:', e));
+    }
+
     if (selectedFlow === 'cv-shortlist') {
       actions.setLoading(true);
 

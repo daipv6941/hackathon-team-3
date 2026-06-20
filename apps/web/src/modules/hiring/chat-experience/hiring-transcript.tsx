@@ -383,9 +383,9 @@ ${result.summary}`;
         {/* Show action buttons for JD approval or other actions */}
         {!isUser && showActions && message.type === 'action' && (
           <>
-            {/* JD Approval buttons - show after scoring */}
+            {/* JD Approval buttons - show for JD drafts */}
             {(state.currentPhase === 'initial' || state.currentPhase === 'jd-approval') &&
-              message.content.includes('Clarity Score') && (
+              (message.content.includes('Clarity Score') || message.content.includes('## ')) && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button size="sm" variant="default" onClick={handleApprove} className="gap-1">
                     <ThumbsUp className="h-3 w-3" />
