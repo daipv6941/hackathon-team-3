@@ -92,13 +92,20 @@ function MessageBubble({
 
       // Extract JD content and clarity score from the message
       const jdContent = message.content || '';
-      const clarityMatch = jdContent.match(/Clarity Score:.*?(\d+)\/100/);
-      const clarityScore = clarityMatch?.[1] ? parseInt(clarityMatch[1], 10) : 0;
+      const metadata = (message.metadata as Record<string, unknown> | undefined) || {};
+
+      // Get clarity score from metadata (preferred) or try to extract from content
+      let clarityScore = metadata.clarityScore as number | undefined;
+      if (!clarityScore) {
+        const clarityMatch = jdContent.match(/Clarity Score:.*?(\d+)\/100/);
+        clarityScore = clarityMatch?.[1] ? parseInt(clarityMatch[1], 10) : 0;
+      }
 
       console.log('📤 Approving JD for request:', {
         requestId: state.selectedRequestId,
         clarityScore,
         contentLength: jdContent.length,
+        hasMetadata: !!metadata.clarityScore,
       });
 
       // Call API to save JD and update request status
@@ -110,6 +117,11 @@ function MessageBubble({
           requestId: state.selectedRequestId,
           jdText: jdContent,
           clarityScore,
+          categoryScores: metadata.categoryScores,
+          flaggedGaps: metadata.flaggedGaps,
+          requiredRevisions: metadata.requiredRevisions,
+          confidence: metadata.confidence,
+          iterations: metadata.iterations,
         }),
       });
 
@@ -381,8 +393,10 @@ ${result.summary}`;
           <div className="whitespace-pre-wrap">{message.content as unknown as string}</div>
         </div>
 
-        {/* Show scoring breakdown if available in metadata */}
-        {!isUser && (message.metadata as Record<string, unknown> | undefined)?.clarityScore ? (
+        {/* Show scoring breakdown for 'result' type messages with clarityScore */}
+        {!isUser &&
+        message.type === 'result' &&
+        (message.metadata as Record<string, unknown> | undefined)?.clarityScore ? (
           <JDScoringBreakdown
             clarityScore={(message.metadata as Record<string, any>).clarityScore || 0}
             status={(message.metadata as Record<string, any>).status || 'Needs Revision'}

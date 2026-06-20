@@ -1,5 +1,5 @@
 import type { Mastra } from '@mastra/core';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import type { Hono } from 'hono';
 import { stream } from 'hono/streaming';
@@ -12,6 +12,7 @@ import {
   fetchContext,
   reviseJd,
   scoreJd,
+  screenCv,
 } from '../orchestration.ts';
 
 export interface HiringRouteDeps {
@@ -340,24 +341,42 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         `✅ Final Score: ${scoreResult.clarityScore}/100 after ${iteration - 1} iteration(s)`,
       );
 
+      // Prepare messages to stream
+      const jdMessage = {
+        type: 'action',
+        content: currentJd.draftText,
+        metadata: {
+          draftJdPrompt: currentJd.fullPrompt,
+        },
+      };
+
+      const scoringContent = `## 📊 Quality Assessment
+
+**Clarity Score: ${scoreResult.clarityScore}/100** — ${scoreResult.status}
+
+Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scoreResult.confidence} confidence)`;
+
+      const scoringMessage = {
+        type: 'result',
+        content: scoringContent,
+        metadata: {
+          clarityScore: scoreResult.clarityScore,
+          status: scoreResult.status,
+          categoryScores: scoreResult.categoryScores,
+          flaggedGaps: scoreResult.flaggedGaps,
+          requiredRevisions: scoreResult.requiredRevisions,
+          confidence: scoreResult.confidence,
+          iterations: iteration - 1,
+        },
+      };
+
       return stream(c, async (writer) => {
         try {
-          await writer.write(
-            `data: ${JSON.stringify({
-              type: 'complete',
-              content: currentJd.draftText,
-              metadata: {
-                draftJdPrompt: currentJd.fullPrompt,
-                clarityScore: scoreResult.clarityScore,
-                status: scoreResult.status,
-                categoryScores: scoreResult.categoryScores,
-                flaggedGaps: scoreResult.flaggedGaps,
-                requiredRevisions: scoreResult.requiredRevisions,
-                confidence: scoreResult.confidence,
-                iterations: iteration - 1,
-              },
-            })}\n\n`,
-          );
+          // Stream Message 1: JD Content
+          await writer.write(`data: ${JSON.stringify(jdMessage)}\n\n`);
+
+          // Stream Message 2: Scoring Breakdown
+          await writer.write(`data: ${JSON.stringify(scoringMessage)}\n\n`);
         } catch (error) {
           console.error('Stream error:', error);
         }
@@ -370,7 +389,16 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
   app.post('/v1/jd/approve', async (c) => {
     try {
-      const { requestId, jdText, clarityScore } = await c.req.json();
+      const {
+        requestId,
+        jdText,
+        clarityScore,
+        categoryScores,
+        flaggedGaps,
+        requiredRevisions,
+        confidence,
+        iterations,
+      } = await c.req.json();
 
       if (!requestId || !jdText) {
         return c.json({ error: 'requestId and jdText required' }, 400);
@@ -379,6 +407,12 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
       const db = getDb();
       const timestamp = Date.now().toString().slice(-6);
       const jdId = `JD-${requestId.replace('REQ-', '')}-${timestamp}`;
+
+      console.log('📨 POST /v1/jd/approve called:', {
+        requestId,
+        clarityScore,
+        iterations,
+      });
 
       await db.insert(schema.hiringJobs).values({
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
@@ -392,15 +426,206 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         status: 'Ready',
       });
 
+      console.log(`💾 Saved JD ${jdId} with clarity score: ${clarityScore}`);
+
       await db
         .update(schema.hiringRequests)
-        .set({ request_status: 'JD Approved', jd_id: jdId })
+        .set({
+          request_status: 'JD Approved',
+          jd_id: jdId,
+        })
         .where(eq(schema.hiringRequests.request_id, requestId));
 
-      return c.json({ success: true, jdId });
+      console.log(`✅ Request ${requestId} status updated to JD Approved with jd_id: ${jdId}`);
+
+      return c.json({
+        success: true,
+        message: `JD approved and request ${requestId} updated`,
+        jdId,
+        requestId,
+        clarityScore,
+        iterations,
+      });
     } catch (error) {
-      console.error('Approve JD error:', error);
+      console.error('❌ Approve JD error:', error);
       return c.json({ error: 'Failed to approve JD' }, 500);
+    }
+  });
+
+  app.post('/v1/shortlist/screen-and-report', async (c) => {
+    try {
+      const { requestId, jdId } = await c.req.json();
+      const db = getDb();
+
+      if (!requestId || !jdId) {
+        return c.json({ error: 'requestId and jdId required' }, 400);
+      }
+
+      console.log('📊 Screening all candidates pool against JD:', { requestId, jdId });
+
+      // Fetch JD requirements
+      const jd = await db.query.hiringJobs.findFirst({
+        where: eq(schema.hiringJobs.jd_id, jdId),
+      });
+
+      if (!jd) {
+        return c.json({ error: 'JD not found' }, 404);
+      }
+
+      // Fetch ALL candidates from pool (no request filter)
+      const allCandidates = await db.select().from(schema.hiringCandidates);
+
+      if (allCandidates.length === 0) {
+        return c.json({ error: 'No candidates found in pool' }, 404);
+      }
+
+      console.log(`📋 Screening ${allCandidates.length} candidates from pool`);
+
+      // Delete existing results for this request (avoid duplicates when re-screening)
+      await db
+        .delete(schema.hiringShortlistResults)
+        .where(eq(schema.hiringShortlistResults.request_id, requestId));
+      console.log('🗑️ Deleted previous screening results for request');
+
+      // Score each candidate
+      const scoredCandidates = [];
+
+      for (const candidate of allCandidates) {
+        try {
+          const scoreResult = await screenCv({
+            cvId: candidate.cv_id,
+            jdId,
+            requestId,
+            tenantId: '550e8400-e29b-41d4-a716-446655440000',
+            candidateName: candidate.full_name,
+            cvSkills: candidate.cv_skills || '',
+            yearsOfExperience: candidate.years_of_experience || 0,
+            englishLevel: candidate.english_level || 'B2',
+            salaryExpectation: candidate.salary_expectation || 'Negotiable',
+            jdMustHave: jd.must_have_skills || '',
+            jdNiceToHave: jd.nice_to_have_skills || '',
+            jdMinYoe: jd.min_yoe || 0,
+          });
+
+          // Save screening result to shortlist_results table
+          await db.insert(schema.hiringShortlistResults).values({
+            tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+            request_id: requestId,
+            jd_id: jdId,
+            cv_id: candidate.cv_id,
+            candidate_id: candidate.candidate_id,
+            candidate_name: candidate.full_name,
+            fit_score: String(scoreResult.fitScore),
+            recommendation: String(scoreResult.recommendation),
+            confidence: scoreResult.confidence as unknown as string,
+            fit_summary: scoreResult.fitSummary as unknown as string,
+            gap_summary: scoreResult.gapSummary as unknown as string,
+            category_scores: scoreResult.categoryScores as unknown as Record<string, unknown>,
+            matched_evidence: scoreResult.matchedEvidence as unknown as Record<string, unknown>,
+            flags: scoreResult.flags as unknown as Record<string, unknown>,
+            interview_questions: scoreResult.interviewQuestions as unknown as Record<
+              string,
+              unknown
+            >,
+            follow_up_questions: scoreResult.followUpQuestions as unknown as Record<
+              string,
+              unknown
+            >,
+            reject_reason: scoreResult.rejectReason as unknown as string,
+          });
+
+          scoredCandidates.push({
+            cvId: candidate.cv_id,
+            candidateName: candidate.full_name,
+            fitScore: scoreResult.fitScore,
+            recommendation: scoreResult.recommendation,
+            fitSummary: scoreResult.fitSummary,
+            interviewQuestions: scoreResult.interviewQuestions || [],
+            followUpQuestions: scoreResult.followUpQuestions || [],
+            rejectReason: scoreResult.rejectReason,
+            categoryScores: scoreResult.categoryScores,
+            confidence: scoreResult.confidence,
+            flags: scoreResult.flags,
+            fullPrompt: scoreResult.fullPrompt,
+          });
+        } catch (error) {
+          console.error(`Failed to score ${candidate.full_name}:`, error);
+          scoredCandidates.push({
+            cvId: candidate.cv_id,
+            candidateName: candidate.full_name,
+            fitScore: 0,
+            recommendation: 'Error',
+            fitSummary: 'Failed to score',
+            interviewQuestions: [],
+            followUpQuestions: [],
+            rejectReason: 'Scoring error',
+            categoryScores: {
+              mustHaveSkills: 0,
+              relevantExperience: 0,
+              languageLevel: 0,
+              niceToHaveSkills: 0,
+            },
+            confidence: 'Low',
+            flags: [],
+          });
+        }
+      }
+
+      // Sort by fit score descending
+      const sorted = scoredCandidates.sort((a, b) => b.fitScore - a.fitScore);
+
+      // Categorize candidates
+      const passCandidates = sorted.filter((c) => c.recommendation === 'Pass');
+      const needMoreInfoCandidates = sorted.filter((c) => c.recommendation === 'Need More Info');
+      const rejectCandidates = sorted.filter((c) => c.recommendation === 'Reject');
+
+      // Calculate percentages
+      const total = allCandidates.length || 1;
+      const passPercentage = Math.round((passCandidates.length / total) * 100);
+      const needMoreInfoPercentage = Math.round((needMoreInfoCandidates.length / total) * 100);
+      const rejectPercentage = Math.round((rejectCandidates.length / total) * 100);
+
+      return c.json({
+        success: true,
+        reportId: `report-${Date.now()}`,
+        requestId,
+        jdId,
+        position: jd.position,
+        totalCandidates: allCandidates.length,
+        scoredCandidates: sorted,
+        statistics: {
+          totalCandidates: total,
+          passCandidates: passCandidates.length,
+          passPercentage,
+          needMoreInfoCandidates: needMoreInfoCandidates.length,
+          needMoreInfoPercentage,
+          rejectCandidates: rejectCandidates.length,
+          rejectPercentage,
+        },
+        passCandidatesList: passCandidates.map((c) => ({
+          candidateName: c.candidateName,
+          fitScore: c.fitScore,
+          fitSummary: c.fitSummary,
+          interviewQuestions: c.interviewQuestions,
+          categoryScores: c.categoryScores,
+        })),
+        needMoreInfoList: needMoreInfoCandidates.map((c) => ({
+          candidateName: c.candidateName,
+          fitScore: c.fitScore,
+          fitSummary: c.fitSummary,
+          followUpQuestions: c.followUpQuestions,
+          categoryScores: c.categoryScores,
+        })),
+        rejectCandidatesList: rejectCandidates.map((c) => ({
+          candidateName: c.candidateName,
+          fitScore: c.fitScore,
+          rejectReason: c.rejectReason,
+        })),
+        summary: `Evaluated ${total} candidates. **${passCandidates.length} (${passPercentage}%)** pass, **${needMoreInfoCandidates.length} (${needMoreInfoPercentage}%)** need more info, **${rejectCandidates.length} (${rejectPercentage}%)** rejected.`,
+      });
+    } catch (error) {
+      console.error('Screen and report error:', error);
+      return c.json({ error: 'Failed to screen candidates' }, 500);
     }
   });
 
@@ -488,6 +713,555 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
     } catch (error) {
       console.error('Create request error:', error);
       return c.json({ error: 'Failed to create hiring request' }, 500);
+    }
+  });
+
+  app.post('/v1/jd/revise', async (c) => {
+    try {
+      const { currentJdText, userFeedback, position, teamSkillGap, keyDeliverables } =
+        await c.req.json();
+
+      console.log('📨 POST /v1/jd/revise called');
+
+      if (!currentJdText || !userFeedback) {
+        return c.json({ error: 'currentJdText and userFeedback required' }, 400);
+      }
+
+      console.log('🔄 Revising JD based on user feedback...');
+
+      const result = await reviseJd({
+        currentDraft: String(currentJdText),
+        flaggedGaps: [],
+        jdId: 'temp',
+        tenantId: '550e8400-e29b-41d4-a716-446655440000',
+      });
+
+      console.log('✅ JD revised successfully');
+
+      return c.json({
+        success: true,
+        revisedJdText: result.revisedText,
+        fullPrompt: result.fullPrompt,
+      });
+    } catch (error) {
+      console.error('❌ Revise JD error:', error);
+      return c.json({ error: 'Failed to revise JD' }, 500);
+    }
+  });
+
+  app.put('/v1/requests/:requestId/status', async (c) => {
+    try {
+      const requestId = c.req.param('requestId');
+      const { status } = await c.req.json();
+
+      if (!status) {
+        return c.json({ error: 'Status is required' }, 400);
+      }
+
+      const db = getDb();
+      console.log(`Updating request ${requestId} status to ${status}`);
+
+      await db
+        .update(schema.hiringRequests)
+        .set({ request_status: status })
+        .where(eq(schema.hiringRequests.request_id, requestId));
+
+      console.log(`✅ Updated request ${requestId} to ${status}`);
+
+      return c.json({
+        success: true,
+        message: `Request ${requestId} status updated to ${status}`,
+        requestId,
+        status,
+      });
+    } catch (error) {
+      console.error('Update status error:', error);
+      return c.json({ error: 'Failed to update status' }, 500);
+    }
+  });
+
+  app.get('/v1/jd/:jdId', async (c) => {
+    try {
+      const jdId = c.req.param('jdId');
+      const db = getDb();
+
+      const results = await db
+        .select({
+          jdId: schema.hiringJobs.jd_id,
+          requestId: schema.hiringJobs.request_id,
+          position: schema.hiringJobs.position,
+          seniorityLevel: schema.hiringJobs.seniority_level,
+          minYoe: schema.hiringJobs.min_yoe,
+          maxYoe: schema.hiringJobs.max_yoe,
+          mustHaveSkills: schema.hiringJobs.must_have_skills,
+          niceToHaveSkills: schema.hiringJobs.nice_to_have_skills,
+          englishLevelRequired: schema.hiringJobs.english_level_required,
+          workMode: schema.hiringJobs.work_mode,
+          salaryRange: schema.hiringJobs.salary_range,
+          keyResponsibilities: schema.hiringJobs.key_responsibilities,
+          jdFullText: schema.hiringJobs.jd_full_text,
+          status: schema.hiringJobs.status,
+          agentClarityScore: schema.hiringJobs.agent_clarity_score,
+          createdAt: schema.hiringJobs.created_at,
+        })
+        .from(schema.hiringJobs)
+        .where(eq(schema.hiringJobs.jd_id, jdId));
+
+      const jd = results[0] || null;
+
+      if (!jd) {
+        return c.json({ error: 'JD not found' }, 404);
+      }
+
+      console.log('📄 GET /v1/jd/:jdId response:', { jdId, foundFields: Object.keys(jd) });
+      return c.json(jd);
+    } catch (error) {
+      console.error('Get JD error:', error);
+      return c.json({ error: 'Failed to fetch JD' }, 500);
+    }
+  });
+
+  app.get('/v1/candidates/:requestId', async (c) => {
+    try {
+      const requestId = c.req.param('requestId');
+      const db = getDb();
+
+      const allCandidates = await db
+        .select({
+          cvId: schema.hiringCandidates.cv_id,
+          candidateId: schema.hiringCandidates.candidate_id,
+          candidateName: schema.hiringCandidates.full_name,
+          currentTitle: schema.hiringCandidates.current_title,
+          currentCompany: schema.hiringCandidates.current_company,
+          yearsOfExperience: schema.hiringCandidates.years_of_experience,
+          cvSkills: schema.hiringCandidates.cv_skills,
+          englishLevel: schema.hiringCandidates.english_level,
+          salaryExpectation: schema.hiringCandidates.salary_expectation,
+        })
+        .from(schema.hiringCandidates);
+
+      const shortlistResults = await db
+        .select({
+          cvId: schema.hiringShortlistResults.cv_id,
+          fitScore: schema.hiringShortlistResults.fit_score,
+          recommendation: schema.hiringShortlistResults.recommendation,
+          fitSummary: schema.hiringShortlistResults.fit_summary,
+        })
+        .from(schema.hiringShortlistResults)
+        .where(eq(schema.hiringShortlistResults.request_id, requestId));
+
+      const candidates = allCandidates.map((c) => {
+        const result = shortlistResults.find((r) => r.cvId === c.cvId);
+        return {
+          ...c,
+          fitScore: result?.fitScore || null,
+          recommendation: result?.recommendation || null,
+          fitSummary: result?.fitSummary || null,
+        };
+      });
+
+      return c.json({ candidates, total: candidates.length });
+    } catch (error) {
+      console.error('Get candidates error:', error);
+      return c.json({ error: 'Failed to fetch candidates' }, 500);
+    }
+  });
+
+  app.post('/v1/candidates/score', async (c) => {
+    try {
+      const { cvId, jdId, requestId } = await c.req.json();
+      const db = getDb();
+
+      if (!cvId || !jdId || !requestId) {
+        return c.json({ error: 'cvId, jdId, and requestId required' }, 400);
+      }
+
+      const candidate = await db.query.hiringCandidates.findFirst({
+        where: eq(schema.hiringCandidates.cv_id, cvId),
+      });
+
+      if (!candidate) {
+        return c.json({ error: 'Candidate not found' }, 404);
+      }
+
+      const jd = await db.query.hiringJobs.findFirst({
+        where: eq(schema.hiringJobs.jd_id, jdId),
+      });
+
+      if (!jd) {
+        return c.json({ error: 'JD not found' }, 404);
+      }
+
+      const scoreResult = await screenCv({
+        cvId,
+        jdId,
+        requestId,
+        tenantId: '550e8400-e29b-41d4-a716-446655440000',
+        candidateName: candidate.full_name,
+        cvSkills: candidate.cv_skills || '',
+        yearsOfExperience: candidate.years_of_experience || 0,
+        englishLevel: candidate.english_level || 'B2',
+        salaryExpectation: candidate.salary_expectation || 'Negotiable',
+        jdMustHave: jd.must_have_skills || '',
+        jdNiceToHave: jd.nice_to_have_skills || '',
+        jdMinYoe: jd.min_yoe || 0,
+      });
+
+      await db.insert(schema.hiringShortlistResults).values({
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        request_id: requestId,
+        jd_id: jdId,
+        cv_id: cvId,
+        candidate_id: candidate.candidate_id,
+        candidate_name: candidate.full_name,
+        fit_score: String(scoreResult.fitScore),
+        recommendation: String(scoreResult.recommendation),
+        confidence: scoreResult.confidence as unknown as string,
+        fit_summary: scoreResult.fitSummary as unknown as string,
+        gap_summary: scoreResult.gapSummary as unknown as string,
+        category_scores: scoreResult.categoryScores as unknown as Record<string, unknown>,
+        matched_evidence: scoreResult.matchedEvidence as unknown as Record<string, unknown>,
+        flags: scoreResult.flags as unknown as Record<string, unknown>,
+        interview_questions: scoreResult.interviewQuestions as unknown as Record<string, unknown>,
+        follow_up_questions: scoreResult.followUpQuestions as unknown as Record<string, unknown>,
+        reject_reason: scoreResult.rejectReason as unknown as string,
+      });
+
+      return c.json({
+        success: true,
+        cvId,
+        candidateName: candidate.full_name,
+        fitScore: scoreResult.fitScore,
+        recommendation: scoreResult.recommendation,
+        fitSummary: scoreResult.fitSummary,
+        categoryScores: scoreResult.categoryScores,
+        flags: scoreResult.flags,
+        suggestedQuestions: scoreResult.suggestedQuestions,
+        fullPrompt: scoreResult.fullPrompt,
+      });
+    } catch (error) {
+      console.error('Score candidate error:', error);
+      return c.json({ error: 'Failed to score candidate' }, 500);
+    }
+  });
+
+  app.post('/v1/shortlist/confirm', async (c) => {
+    try {
+      const body = await c.req.json();
+      const { requestId, selectedCandidateIds } = body;
+      const db = getDb();
+
+      if (!requestId) {
+        return c.json({ error: 'requestId required' }, 400);
+      }
+
+      const candidateIds = Array.isArray(selectedCandidateIds) ? selectedCandidateIds : [];
+
+      console.log('📋 Confirming shortlist for request:', {
+        requestId,
+        candidateCount: candidateIds.length,
+      });
+
+      await db
+        .update(schema.hiringRequests)
+        .set({ request_status: 'Shortlist Ready' })
+        .where(eq(schema.hiringRequests.request_id, requestId));
+
+      console.log('✅ Request status updated to "Shortlist Ready"');
+
+      let shortlistedCandidates: Array<{
+        cvId: string;
+        candidateName: string;
+        fitScore: string;
+        recommendation: string;
+      }> = [];
+      if (candidateIds.length > 0) {
+        shortlistedCandidates = await db
+          .select({
+            cvId: schema.hiringShortlistResults.cv_id,
+            candidateName: schema.hiringShortlistResults.candidate_name,
+            fitScore: schema.hiringShortlistResults.fit_score,
+            recommendation: schema.hiringShortlistResults.recommendation,
+          })
+          .from(schema.hiringShortlistResults)
+          .where(inArray(schema.hiringShortlistResults.cv_id, candidateIds));
+      }
+
+      return c.json({
+        success: true,
+        message: `Shortlist confirmed with ${shortlistedCandidates.length} candidates`,
+        requestId,
+        requestStatus: 'Shortlist Ready',
+        shortlistedCandidates,
+      });
+    } catch (error) {
+      console.error('Confirm shortlist error:', error);
+      return c.json({ error: 'Failed to confirm shortlist' }, 500);
+    }
+  });
+
+  app.get('/v1/shortlist/results/:requestId', async (c) => {
+    try {
+      const requestId = c.req.param('requestId');
+      const db = getDb();
+
+      const results = await db
+        .select()
+        .from(schema.hiringShortlistResults)
+        .where(eq(schema.hiringShortlistResults.request_id, requestId))
+        .orderBy(desc(schema.hiringShortlistResults.fit_score));
+
+      if (results.length === 0) {
+        return c.json({
+          requestId,
+          results: [],
+          summary: 'No shortlist results found',
+        });
+      }
+
+      const passCandidates = results.filter((r) => r.recommendation === 'Pass');
+      const needMoreInfo = results.filter((r) => r.recommendation === 'Need More Info');
+      const rejected = results.filter((r) => r.recommendation === 'Reject');
+
+      const total = results.length || 1;
+
+      return c.json({
+        success: true,
+        requestId,
+        totalCandidates: results.length,
+        statistics: {
+          totalCandidates: total,
+          passCandidates: passCandidates.length,
+          passPercentage: Math.round((passCandidates.length / total) * 100),
+          needMoreInfoCandidates: needMoreInfo.length,
+          needMoreInfoPercentage: Math.round((needMoreInfo.length / total) * 100),
+          rejectCandidates: rejected.length,
+          rejectPercentage: Math.round((rejected.length / total) * 100),
+        },
+        results,
+        passCandidatesList: passCandidates.map((r) => ({
+          candidateName: r.candidate_name,
+          fitScore: r.fit_score,
+          fitSummary: r.fit_summary,
+          interviewQuestions: r.interview_questions,
+          categoryScores: r.category_scores,
+        })),
+        needMoreInfoList: needMoreInfo.map((r) => ({
+          candidateName: r.candidate_name,
+          fitScore: r.fit_score,
+          fitSummary: r.fit_summary,
+          followUpQuestions: r.follow_up_questions,
+          categoryScores: r.category_scores,
+        })),
+        rejectCandidatesList: rejected.map((r) => ({
+          candidateName: r.candidate_name,
+          fitScore: r.fit_score,
+          rejectReason: r.reject_reason,
+        })),
+      });
+    } catch (error) {
+      console.error('Get shortlist results error:', error);
+      return c.json({ error: 'Failed to fetch shortlist results' }, 500);
+    }
+  });
+
+  app.get('/v1/candidates', async (c) => {
+    try {
+      const db = getDb();
+      const status = c.req.query('status');
+
+      let candidates: Record<string, unknown>[];
+      if (status && ['active', 'inactive'].includes(status)) {
+        candidates = await db
+          .select()
+          .from(schema.hiringCandidates)
+          .where(eq(schema.hiringCandidates.status, status))
+          .orderBy(desc(schema.hiringCandidates.created_at));
+      } else {
+        candidates = await db
+          .select()
+          .from(schema.hiringCandidates)
+          .orderBy(desc(schema.hiringCandidates.created_at));
+      }
+
+      return c.json({
+        success: true,
+        totalCandidates: candidates.length,
+        candidates: candidates.map((c) => ({
+          id: c.id,
+          cvId: c.cv_id,
+          candidateId: c.candidate_id,
+          fullName: c.full_name,
+          currentTitle: c.current_title,
+          currentCompany: c.current_company,
+          yearsOfExperience: c.years_of_experience,
+          cvSkills: c.cv_skills,
+          englishLevel: c.english_level,
+          salaryExpectation: c.salary_expectation,
+          status: c.status,
+          createdAt: c.created_at,
+          updatedAt: c.updated_at,
+        })),
+      });
+    } catch (error) {
+      console.error('Fetch candidates error:', error);
+      return c.json({ error: 'Failed to fetch candidates' }, 500);
+    }
+  });
+
+  app.post('/v1/candidates', async (c) => {
+    try {
+      const db = getDb();
+      const body = (await c.req.json()) as Record<string, unknown>;
+
+      const cvId = body.cvId as string | undefined;
+      const candidateId = body.candidateId as string | undefined;
+      const fullName = body.fullName as string | undefined;
+      const currentTitle = body.currentTitle as string | undefined;
+      const currentCompany = body.currentCompany as string | undefined;
+      const yearsOfExperience = body.yearsOfExperience as number | undefined;
+      const cvSkills = body.cvSkills as string | undefined;
+      const englishLevel = body.englishLevel as string | undefined;
+      const salaryExpectation = body.salaryExpectation as string | undefined;
+      const cvSummaryByTA = body.cvSummaryByTA as string | undefined;
+      const status = (body.status as string | undefined) || 'active';
+
+      if (!cvId || !candidateId || !fullName) {
+        return c.json({ error: 'cvId, candidateId, fullName required' }, 400);
+      }
+
+      const existing = await db.query.hiringCandidates.findFirst({
+        where: eq(schema.hiringCandidates.cv_id, cvId),
+      });
+
+      if (existing) {
+        return c.json({ error: 'Candidate with this cvId already exists' }, 409);
+      }
+
+      const newCandidate = await db
+        .insert(schema.hiringCandidates)
+        .values({
+          tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+          cv_id: cvId,
+          candidate_id: candidateId,
+          full_name: fullName,
+          current_title: currentTitle,
+          current_company: currentCompany,
+          years_of_experience: yearsOfExperience,
+          cv_skills: cvSkills,
+          english_level: englishLevel || 'B2',
+          salary_expectation: salaryExpectation,
+          cv_summary_by_ta: cvSummaryByTA,
+          status,
+        })
+        .returning();
+
+      if (!newCandidate || newCandidate.length === 0) {
+        return c.json({ error: 'Failed to create candidate' }, 500);
+      }
+
+      const candidate = newCandidate[0];
+      if (!candidate) {
+        return c.json({ error: 'Failed to retrieve created candidate' }, 500);
+      }
+      console.log('✅ Candidate added:', candidate.cv_id);
+
+      return c.json({
+        success: true,
+        candidate: {
+          id: candidate.id,
+          cvId: candidate.cv_id,
+          candidateId: candidate.candidate_id,
+          fullName: candidate.full_name,
+          status: candidate.status,
+          createdAt: candidate.created_at,
+        },
+      });
+    } catch (error) {
+      console.error('Add candidate error:', error);
+      return c.json({ error: 'Failed to add candidate' }, 500);
+    }
+  });
+
+  app.put('/v1/candidates/:cvId', async (c) => {
+    try {
+      const db = getDb();
+      const cvId = c.req.param('cvId');
+      const body = (await c.req.json()) as Record<string, unknown>;
+
+      const status = body.status as string | undefined;
+      const currentTitle = body.currentTitle as string | undefined;
+      const currentCompany = body.currentCompany as string | undefined;
+      const englishLevel = body.englishLevel as string | undefined;
+      const salaryExpectation = body.salaryExpectation as string | undefined;
+
+      type UpdateData = Record<string, string | Date>;
+      const updates: UpdateData = {};
+      if (status) updates.status = status;
+      if (currentTitle) updates.current_title = currentTitle;
+      if (currentCompany) updates.current_company = currentCompany;
+      if (englishLevel) updates.english_level = englishLevel;
+      if (salaryExpectation) updates.salary_expectation = salaryExpectation;
+      updates.updated_at = new Date();
+
+      if (Object.keys(updates).length === 1 && updates.updated_at) {
+        return c.json({ error: 'No updates provided' }, 400);
+      }
+
+      const updated = await db
+        .update(schema.hiringCandidates)
+        .set(updates)
+        .where(eq(schema.hiringCandidates.cv_id, cvId))
+        .returning();
+
+      if (!updated || updated.length === 0) {
+        return c.json({ error: 'Candidate not found' }, 404);
+      }
+
+      const candidate = updated[0];
+      if (!candidate) {
+        return c.json({ error: 'Failed to retrieve updated candidate' }, 404);
+      }
+      console.log('✅ Candidate updated:', cvId);
+
+      return c.json({
+        success: true,
+        candidate: {
+          id: candidate.id,
+          cvId: candidate.cv_id,
+          status: candidate.status,
+          updatedAt: candidate.updated_at,
+        },
+      });
+    } catch (error) {
+      console.error('Update candidate error:', error);
+      return c.json({ error: 'Failed to update candidate' }, 500);
+    }
+  });
+
+  app.delete('/v1/candidates/:cvId', async (c) => {
+    try {
+      const db = getDb();
+      const cvId = c.req.param('cvId');
+
+      const deleted = await db
+        .delete(schema.hiringCandidates)
+        .where(eq(schema.hiringCandidates.cv_id, cvId))
+        .returning();
+
+      if (deleted.length === 0) {
+        return c.json({ error: 'Candidate not found' }, 404);
+      }
+
+      console.log('✅ Candidate deleted:', cvId);
+
+      return c.json({
+        success: true,
+        message: `Candidate ${cvId} deleted`,
+      });
+    } catch (error) {
+      console.error('Delete candidate error:', error);
+      return c.json({ error: 'Failed to delete candidate' }, 500);
     }
   });
 }

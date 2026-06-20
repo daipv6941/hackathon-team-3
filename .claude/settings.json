@@ -169,7 +169,12 @@
       "Bash(pkill -f \"pnpm.*server.*dev\")",
       "Bash(pkill -f \"tsx.*index.ts\")",
       "Bash(curl -s -X POST http://localhost:3000/api/hiring/v1/threads -H 'Content-Type: application/json' -d '{ *)",
-      "Bash(curl -s -X POST http://localhost:3000/api/hiring/v1/jd/score -H 'Content-Type: application/json' -d '{ *)"
+      "Bash(curl -s -X POST http://localhost:3000/api/hiring/v1/jd/score -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(pkill -f \"pnpm.*dev\")",
+      "Bash(pkill -f \"tsx\")",
+      "Bash(curl -X POST http://localhost:3000/api/hiring/v1/shortlist/screen-and-report -H 'Content-Type: application/json' -d '{\"requestId\":\"REQ-590018\",\"jdId\":\"JD-590018-172107\"}')",
+      "Bash(curl -X POST http://localhost:3000/api/hiring/v1/shortlist/screen-and-report -H 'Content-Type: application/json' -H 'Authorization: Bearer test' -d '{\"requestId\":\"REQ-590018\",\"jdId\":\"JD-590018-172107\"}')",
+      "Bash(pnpm --filter @seta/web lint:hiring)"
     ],
     "additionalDirectories": [
       "/private/tmp",

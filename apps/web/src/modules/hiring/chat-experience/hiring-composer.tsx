@@ -56,8 +56,7 @@ export function HiringComposer() {
 
         const decoder = new TextDecoder();
         let buffer = '';
-        const thinkingBlocks: string[] = [];
-        let completedContent = '';
+        const messages: Array<{ role: string; content: string; type: string; metadata?: any }> = [];
 
         while (true) {
           const { done, value } = await reader.read();
@@ -71,11 +70,19 @@ export function HiringComposer() {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
+                console.log('📨 Received message:', {
+                  type: data.type,
+                  hasContent: !!data.content,
+                });
 
-                if (data.type === 'thinking') {
-                  thinkingBlocks.push(data.content);
-                } else if (data.type === 'complete') {
-                  completedContent = data.content;
+                // Collect messages from stream (action: JD, result: scoring)
+                if (data.type === 'action' || data.type === 'result') {
+                  messages.push({
+                    role: 'assistant',
+                    content: data.content,
+                    type: data.type,
+                    metadata: data.metadata,
+                  });
                 }
               } catch (e) {
                 console.error('Failed to parse SSE:', e);
@@ -84,21 +91,18 @@ export function HiringComposer() {
           }
         }
 
-        if (completedContent) {
-          const jdMessage = {
-            role: 'assistant' as const,
-            content: completedContent,
-            type: 'action' as const,
-          };
-          actions.addMessage(jdMessage);
+        // Add both messages to state and save to database
+        for (const msg of messages) {
+          console.log(`✅ Adding ${msg.type} message to state`);
+          actions.addMessage(msg as any);
 
-          // Save JD message to database for this thread
+          // Save message to database
           await fetch('/api/hiring/v1/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ threadId: tid, ...jdMessage }),
-          }).catch((e) => console.error('Failed to save JD message:', e));
+            body: JSON.stringify({ threadId: tid, ...msg }),
+          }).catch((e) => console.error(`Failed to save ${msg.type} message:`, e));
         }
       } catch (error) {
         console.error('Workflow error:', error);
@@ -292,13 +296,18 @@ export function HiringComposer() {
       isLoadingExistingThread,
       currentPhase: state.currentPhase,
       alreadyTriggered: triggeredThreadsRef.current.has(threadId || ''),
+      messageCount: state.messages.length,
     });
 
+    // Only trigger workflow for NEW threads (created in this session)
+    // Don't retrigger for existing threads loaded from database
     if (
       threadId &&
       !isLoadingExistingThread &&
       state.currentPhase === 'initial' &&
-      !triggeredThreadsRef.current.has(threadId)
+      !triggeredThreadsRef.current.has(threadId) &&
+      state.messages.length > 0 && // Has at least initial messages
+      !state.messages.some((m) => m.content.includes('## ')) // No JD exists yet
     ) {
       console.log('🚀 Triggering workflow for thread:', threadId);
       triggeredThreadsRef.current.add(threadId);
@@ -310,6 +319,7 @@ export function HiringComposer() {
     state.currentPhase,
     extractedData,
     triggerInitialPhaseWorkflow,
+    state.messages,
   ]);
 
   const handleCreateRequestFlow = async (userInput: string) => {
