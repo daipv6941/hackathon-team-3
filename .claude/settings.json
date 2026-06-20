@@ -163,7 +163,13 @@
       "Bash(git checkout *)",
       "Bash(curl -s http://localhost:3001/health)",
       "Bash(curl -s http://localhost:3001/api/hiring/v1/requests)",
-      "Bash(pnpm lint:raw-sql)"
+      "Bash(pnpm lint:raw-sql)",
+      "Bash(bash -c 'nvm use 22.13.1 && pnpm --filter @seta/server dev > /tmp/server.log 2>&1 & *)",
+      "Bash(zsh -c ' *)",
+      "Bash(pkill -f \"pnpm.*server.*dev\")",
+      "Bash(pkill -f \"tsx.*index.ts\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/hiring/v1/threads -H 'Content-Type: application/json' -d '{ *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/hiring/v1/jd/score -H 'Content-Type: application/json' -d '{ *)"
     ],
     "additionalDirectories": [
       "/private/tmp",

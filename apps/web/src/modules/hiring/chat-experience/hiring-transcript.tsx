@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle2, MessageCircle, Search, ThumbsUp } from 'luci
 import { useEffect, useRef, useState } from 'react';
 import { HiringRequestSelector } from './hiring-request-selector';
 import { HiringSelection } from './hiring-selection';
+import { JDScoringBreakdown } from './jd-scoring-breakdown';
 import { useHiringChat } from './use-hiring-chat';
 
 export function HiringTranscript() {
@@ -377,15 +378,29 @@ ${result.summary}`;
               : 'bg-surface-2 text-ink rounded-bl-none'
           }`}
         >
-          <div className="whitespace-pre-wrap">{message.content}</div>
+          <div className="whitespace-pre-wrap">{message.content as unknown as string}</div>
         </div>
+
+        {/* Show scoring breakdown if available in metadata */}
+        {!isUser && (message.metadata as Record<string, unknown> | undefined)?.clarityScore ? (
+          <JDScoringBreakdown
+            clarityScore={(message.metadata as Record<string, any>).clarityScore || 0}
+            status={(message.metadata as Record<string, any>).status || 'Needs Revision'}
+            categoryScores={(message.metadata as Record<string, any>).categoryScores || {}}
+            flaggedGaps={(message.metadata as Record<string, any>).flaggedGaps || []}
+            requiredRevisions={(message.metadata as Record<string, any>).requiredRevisions || []}
+            confidence={(message.metadata as Record<string, any>).confidence || 'Medium'}
+            iterations={(message.metadata as Record<string, any>).iterations || 0}
+          />
+        ) : null}
 
         {/* Show action buttons for JD approval or other actions */}
         {!isUser && showActions && message.type === 'action' && (
           <>
             {/* JD Approval buttons - show for JD drafts */}
             {(state.currentPhase === 'initial' || state.currentPhase === 'jd-approval') &&
-              (message.content.includes('Clarity Score') || message.content.includes('## ')) && (
+              (String(message.content).includes('Clarity Score') ||
+                String(message.content).includes('## ')) && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button size="sm" variant="default" onClick={handleApprove} className="gap-1">
                     <ThumbsUp className="h-3 w-3" />
