@@ -56,20 +56,10 @@ export function HiringComposer() {
 
         const decoder = new TextDecoder();
         let buffer = '';
-        const messages: Array<{
+        const finalMessages: Array<{
           role: 'user' | 'assistant';
           content: string;
           type: string;
-          metadata?: Record<string, unknown>;
-        }> = [];
-        let streamingTokens = '';
-        let draftJdContent = '';
-        let scoringContent = '';
-        let phase: 'generating' | 'scoring' | 'complete' = 'generating';
-        const allMessages: Array<{
-          role: 'user' | 'assistant';
-          content: string;
-          type?: 'text' | 'action' | 'result';
           metadata?: Record<string, unknown>;
         }> = [];
 
@@ -86,54 +76,30 @@ export function HiringComposer() {
               try {
                 const data = JSON.parse(line.slice(6));
 
-                // Collect text tokens for streaming display
+                // Ignore thinking and text tokens - just log them
                 if (data.type === 'text') {
-                  streamingTokens += data.content || '';
-                  if (phase === 'generating') {
-                    draftJdContent = streamingTokens;
-                  } else if (phase === 'scoring') {
-                    scoringContent = streamingTokens;
-                  }
-
-                  // Update messages with streaming content
-                  allMessages.length = 0;
-                  if (draftJdContent) {
-                    allMessages.push({
-                      role: 'assistant',
-                      content: draftJdContent,
-                      type: 'text',
-                    });
-                  }
-                  if (scoringContent) {
-                    allMessages.push({
-                      role: 'assistant',
-                      content: scoringContent,
-                      type: 'text',
-                    });
-                  }
-                  actions.setMessages(allMessages);
+                  console.log('📝 Token received');
                 } else if (data.type === 'thinking-start') {
                   console.log('🧠 Reasoning started');
                 } else if (data.type === 'thinking-end') {
                   console.log('🧠 Reasoning ended');
                 }
 
-                // Collect final messages from stream
+                // Collect final action and result messages only
                 if (data.type === 'action') {
                   console.log('📨 JD action message received');
-                  phase = 'scoring';
-                  messages.push({
+                  finalMessages.push({
                     role: 'assistant',
                     content: data.content,
                     type: 'action' as const,
-                    metadata: data.metadata,
+                    metadata: {
+                      ...data.metadata,
+                      requiresApproval: true, // Flag for UI to show approve/feedback buttons
+                    },
                   });
-                  draftJdContent = '';
-                  streamingTokens = '';
                 } else if (data.type === 'result') {
                   console.log('📨 Scoring result message received');
-                  phase = 'complete';
-                  messages.push({
+                  finalMessages.push({
                     role: 'assistant',
                     content: data.content,
                     type: 'result' as const,
@@ -148,7 +114,7 @@ export function HiringComposer() {
         }
 
         // Add both messages to state and save to database
-        for (const msg of messages) {
+        for (const msg of finalMessages) {
           console.log(`✅ Adding ${msg.type} message to state`);
           actions.addMessage(
             msg as {

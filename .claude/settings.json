@@ -182,7 +182,8 @@
       "Bash(bash -c 'nvm use 24.17.0 && pnpm lint')",
       "Bash(pnpm test *)",
       "Bash(pnpm run *)",
-      "Bash(curl -s http://localhost:8000/health)"
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:3000/)"
     ],
     "additionalDirectories": [
       "/private/tmp",

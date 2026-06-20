@@ -93,6 +93,26 @@ export const ScreenCvInputSchema = z.object({
   jdMinYoe: z.number(),
 });
 
+export const BatchScreenCandidatesInputSchema = z.object({
+  jdId: z.string(),
+  requestId: z.string(),
+  tenantId: z.string().uuid(),
+  candidates: z.array(
+    z.object({
+      cv_id: z.string(),
+      candidate_id: z.string(),
+      full_name: z.string(),
+      cv_skills: z.string().optional(),
+      years_of_experience: z.number().optional(),
+      english_level: z.string().optional(),
+      salary_expectation: z.string().optional(),
+    }),
+  ),
+  jdMustHave: z.string(),
+  jdNiceToHave: z.string(),
+  jdMinYoe: z.number(),
+});
+
 export const GenerateReportInputSchema = z.object({
   requestId: z.string(),
   tenantId: z.string().uuid(),
@@ -1149,4 +1169,104 @@ Return the complete revised JD in markdown format.`;
     revisedText: result.text,
     fullPrompt: prompt,
   };
+}
+
+/**
+ * Batch screen all candidates against JD in one call with streaming
+ */
+export async function* batchScreenCandidatesStream(
+  input: z.infer<typeof BatchScreenCandidatesInputSchema>,
+) {
+  console.log('batchScreenCandidatesStream:', {
+    jdId: input.jdId,
+    candidateCount: input.candidates.length,
+  });
+
+  const model = openai('gpt-4-turbo');
+
+  const candidatesText = input.candidates
+    .map(
+      (c) =>
+        `- ${c.full_name} (${c.cv_id}): ${c.cv_skills || 'N/A'}, ${c.years_of_experience || 0}yoe, English ${c.english_level || 'B2'}, Salary: ${c.salary_expectation || 'Negotiable'}`,
+    )
+    .join('\n');
+
+  const prompt = `You are an expert recruiter. Screen these ${input.candidates.length} candidates against the JD requirements.
+
+JD REQUIREMENTS:
+- Must Have Skills: ${input.jdMustHave}
+- Nice to Have: ${input.jdNiceToHave}
+- Min Years of Experience: ${input.jdMinYoe}
+
+CANDIDATES:
+${candidatesText}
+
+For EACH candidate, analyze fit and respond ONLY with valid JSON array (no markdown):
+[
+  {
+    "cvId": "CV-XXX",
+    "candidateName": "Name",
+    "fitScore": 0-100,
+    "recommendation": "Pass|Reject|Need More Info",
+    "fitSummary": "Brief fit summary",
+    "gapSummary": "Key gaps if any",
+    "categoryScores": {
+      "mustHaveSkills": 0-25,
+      "relevantExperience": 0-25,
+      "languageLevel": 0-25,
+      "niceToHaveSkills": 0-25
+    },
+    "matchedEvidence": ["evidence1", "evidence2"],
+    "flags": ["flag1", "flag2"],
+    "interviewQuestions": ["q1", "q2"],
+    "followUpQuestions": ["q1", "q2"],
+    "rejectReason": "Reason if rejecting"
+  },
+  ...
+]`;
+
+  console.log('📋 batchScreenCandidatesStream prompt:', prompt.substring(0, 200) + '...');
+
+  const stream = streamText({
+    model,
+    prompt,
+    temperature: 0.5,
+  });
+
+  let fullText = '';
+
+  for await (const chunk of stream.fullStream) {
+    if (chunk.type === 'text-delta') {
+      fullText += chunk.text;
+      yield { type: 'text', content: chunk.text };
+    } else if (chunk.type === 'reasoning-start') {
+      yield { type: 'thinking-start', content: '' };
+    } else if (chunk.type === 'reasoning-end') {
+      yield { type: 'thinking-end', content: '' };
+    }
+  }
+
+  // Parse the collected text
+  try {
+    const cleanedText = fullText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+    const parsed = JSON.parse(cleanedText);
+    yield {
+      type: 'complete',
+      content: 'parsed',
+      data: {
+        results: Array.isArray(parsed) ? parsed : [parsed],
+        fullPrompt: prompt,
+      },
+    };
+  } catch (error) {
+    console.error('Failed to parse batch screening response:', error, fullText);
+    yield {
+      type: 'error',
+      content: 'parse-error',
+      message: 'Unable to parse screening result',
+    };
+  }
 }
