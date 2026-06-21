@@ -888,10 +888,14 @@ Return ONLY valid JSON (no markdown, no code blocks):
     const parsed = JSON.parse(cleanedText);
 
     const fitScore = Math.min(100, Math.max(0, parsed.final_cv_fit_score || 0));
-    const mustHaveSkillsScore = parsed.category_scores?.must_have_skills_match || 0;
+    const mustHaveSkillsScore = Math.min(50, Math.max(0, parsed.category_scores?.must_have_skills_match || 0));
+    const relevantExpScore = Math.min(20, Math.max(0, parsed.category_scores?.relevant_experience_seniority_match || 0));
+    const languageLevelScore = Math.min(15, Math.max(0, parsed.category_scores?.required_language_level_match || 0));
+    const niceToHaveScore = Math.min(15, Math.max(0, parsed.category_scores?.nice_to_have_skills_match || 0));
 
     const getRecommendation = (score: number, mustHaveScore: number): 'Pass' | 'Reject' | 'Need More Info' => {
-      // Hard gate: if no must-have skills match, reject regardless of other scores
+      // Hard gate: if truly zero must-have skill match, force Reject
+      // But keep the actual fitScore and reason from model for transparency
       if (mustHaveScore === 0) return 'Reject';
 
       if (score >= 75) return 'Pass';
@@ -902,14 +906,14 @@ Return ONLY valid JSON (no markdown, no code blocks):
     const recommendation = getRecommendation(fitScore, mustHaveSkillsScore);
 
     return {
-      fitScore,
+      fitScore, // Keep actual score from model, don't override
       recommendation,
       confidence: parsed.confidence || 'Medium',
       categoryScores: {
-        mustHaveSkills: parsed.category_scores?.must_have_skills_match || 0,
-        relevantExperience: parsed.category_scores?.relevant_experience_seniority_match || 0,
-        languageLevel: parsed.category_scores?.required_language_level_match || 0,
-        niceToHaveSkills: parsed.category_scores?.nice_to_have_skills_match || 0,
+        mustHaveSkills: mustHaveSkillsScore,
+        relevantExperience: relevantExpScore,
+        languageLevel: languageLevelScore,
+        niceToHaveSkills: niceToHaveScore,
       },
       fitSummary: parsed.final_decision_reason || 'Review CV for fit',
       matchedEvidence: parsed.matched_evidence || [],
@@ -922,9 +926,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
         recommendation === 'Need More Info' ? parsed.follow_up_questions || [] : [],
       rejectReason:
         recommendation === 'Reject'
-          ? mustHaveSkillsScore === 0
-            ? 'No match on must-have skills - hard gate'
-            : parsed.reject_reason || 'Does not meet job requirements'
+          ? parsed.reject_reason || 'Does not meet job requirements'
           : null,
       fullPrompt: prompt,
     };
