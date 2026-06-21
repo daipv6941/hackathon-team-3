@@ -282,7 +282,7 @@ export async function fetchContext(
 export async function draftJd(input: z.infer<typeof DraftJdInputSchema>) {
   console.log('draftJd:', input);
 
-  const model = openai('gpt-4-turbo');
+  const model = openai('gpt-4o');
 
   const prompt = `You are an expert Technical Recruiter. Generate a professional, screening-ready Job Description.
 Your output will be evaluated against 8 criteria: Hiring Alignment, Role/Seniority, Skill Accuracy, Deliverables+Metrics, Interview Alignment, Screening Usefulness, Bias/Compliance, Completeness.
@@ -401,7 +401,7 @@ OUTPUT ONLY: Complete JD in Markdown format. Do not include this checklist or an
 export async function* draftJdStream(input: z.infer<typeof DraftJdInputSchema>) {
   console.log('draftJdStream:', input);
 
-  const model = openai('gpt-4-turbo');
+  const model = openai('gpt-4o');
 
   const prompt = `You are a Recruiting Manager tasked with creating a Professional Job Description.
 
@@ -461,7 +461,7 @@ Generate a professional, screening-ready Job Description for this role.`;
 export async function scoreJd(input: z.infer<typeof ScoreJdInputSchema>) {
   console.log('scoreJd:', input);
 
-  const model = openai('gpt-4-turbo');
+  const model = openai('gpt-4o');
 
   const prompt = `You are an expert Recruiter evaluating Job Descriptions using the JD Quality Scoring Guide v3.
 
@@ -622,7 +622,7 @@ ${input.jdText}`;
 export async function* scoreJdStream(input: z.infer<typeof ScoreJdInputSchema>) {
   console.log('scoreJdStream:', input);
 
-  const model = openai('gpt-4-turbo');
+  const model = openai('gpt-4o');
 
   const prompt = `You are an expert Recruiter evaluating Job Descriptions using the JD Quality Scoring Guide v3.
 
@@ -754,7 +754,7 @@ ${input.jdText}`;
 export async function reviseJd(input: z.infer<typeof ReviseJdInputSchema>) {
   console.log('reviseJd:', input);
 
-  const model = openai('gpt-4-turbo');
+  const model = openai('gpt-4o');
 
   const gaps = input.flaggedGaps.join('\n- ');
   const prompt = `You are an expert Recruiter. Improve this job description to address the flagged gaps.
@@ -794,7 +794,7 @@ Return the revised JD with all sections complete.`;
 export async function screenCv(input: z.infer<typeof ScreenCvInputSchema>) {
   console.log('screenCv:', input);
 
-  const model = openai('gpt-4-turbo');
+  const model = openai('gpt-4o');
 
   // Use full JD text if available, otherwise fall back to parsed fields
   const jdContext = input.jdFullText
@@ -1168,7 +1168,7 @@ export async function extractRequestDetails(
 ): Promise<ExtractedRequestDetails> {
   console.log('extractRequestDetails: Processing user description');
 
-  const model = openai('gpt-4-turbo');
+  const model = openai('gpt-4o');
 
   const prompt = `You are an expert HR recruiter. Extract hiring request information from the following description.
 CRITICAL: Use ONLY the specified enum values. No paraphrasing.
@@ -1257,7 +1257,7 @@ export const ReviseJdWithFeedbackInputSchema = z.object({
 export async function reviseJdWithFeedback(input: z.infer<typeof ReviseJdWithFeedbackInputSchema>) {
   console.log('reviseJdWithFeedback: Revising JD based on user feedback');
 
-  const model = openai('gpt-4-turbo');
+  const model = openai('gpt-4o');
 
   const prompt = `You are an expert Technical Recruiter. You are revising a job description based on user feedback.
 
@@ -1301,7 +1301,7 @@ export async function* batchScreenCandidatesStream(
     candidateCount: input.candidates.length,
   });
 
-  const model = openai('gpt-4-turbo');
+  const model = openai('gpt-4o');
 
   const candidatesText = input.candidates
     .map(
