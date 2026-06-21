@@ -1191,36 +1191,70 @@ export async function* batchScreenCandidatesStream(
     )
     .join('\n');
 
-  const prompt = `You are an expert recruiter. Screen these ${input.candidates.length} candidates against the JD requirements.
+  const prompt = `You are an expert recruiter using the CV Fit Scoring Guide v2. Screen these ${input.candidates.length} candidates against the approved JD using the official scoring methodology.
 
-JD REQUIREMENTS:
-- Must Have Skills: ${input.jdMustHave}
-- Nice to Have: ${input.jdNiceToHave}
-- Min Years of Experience: ${input.jdMinYoe}
+APPROVED JD REQUIREMENTS:
+- Must-Have Skills (50 points): ${input.jdMustHave}
+- Nice-to-Have Skills (15 points): ${input.jdNiceToHave}
+- Min Years of Experience: ${input.jdMinYoe} years
 
 CANDIDATES:
 ${candidatesText}
 
-For EACH candidate, analyze fit and respond ONLY with valid JSON array (no markdown):
+For EACH candidate, score using this EXACT methodology:
+
+SCORING BREAKDOWN (100 points total):
+
+1. MUST-HAVE SKILLS MATCH (50 points)
+   - Match each candidate skill to JD must-haves
+   - Strong Match = 100% credit, Partial Match = 50% credit, No Match = 0%
+   - Divide 50 points equally among must-have skills
+   - Return score/50
+
+2. RELEVANT EXPERIENCE & SENIORITY (20 points)
+   - Total Professional YOE (5 pts): meets/exceeds = 5, slightly below = 3, clearly below = 1
+   - Role-Relevant YOE (8 pts): assess if prior roles match this job family
+   - Key-Skill YOE (5 pts): experience with specific skills in right context
+   - Ownership Evidence (2 pts): leadership, mentorship, architecture responsibilities
+   - Return score/20
+
+3. REQUIRED LANGUAGE LEVEL MATCH (15 points)
+   - Exceeds requirement = 15, Meets = 12, Slightly below = 6, Clearly below = 0
+   - Return score/15
+
+4. NICE-TO-HAVE SKILLS MATCH (15 points)
+   - Same methodology as must-haves
+   - Divide 15 points equally among nice-to-have skills
+   - Return score/15
+
+RECOMMENDATION THRESHOLDS:
+- 85-100: Strong shortlist (Pass)
+- 75-84: Shortlist (Pass)
+- 60-74: Medium / HM Review (Need More Info)
+- 40-59: Low / Need More Information (Need More Info)
+- <40: Reject / Not Suitable (Reject)
+
+Return ONLY valid JSON array (no markdown, no code blocks):
 [
   {
     "cvId": "CV-XXX",
-    "candidateName": "Name",
-    "fitScore": 0-100,
-    "recommendation": "Pass|Reject|Need More Info",
-    "fitSummary": "Brief fit summary",
-    "gapSummary": "Key gaps if any",
+    "candidateName": "Full Name",
+    "fitScore": <0-100 number>,
+    "recommendation": "<Pass|Reject|Need More Info>",
+    "confidence": "<High|Medium|Low>",
     "categoryScores": {
-      "mustHaveSkills": 0-25,
-      "relevantExperience": 0-25,
-      "languageLevel": 0-25,
-      "niceToHaveSkills": 0-25
+      "mustHaveSkills": <0-50>,
+      "relevantExperience": <0-20>,
+      "languageLevel": <0-15>,
+      "niceToHaveSkills": <0-15>
     },
-    "matchedEvidence": ["evidence1", "evidence2"],
-    "flags": ["flag1", "flag2"],
-    "interviewQuestions": ["q1", "q2"],
-    "followUpQuestions": ["q1", "q2"],
-    "rejectReason": "Reason if rejecting"
+    "fitSummary": "<1-2 sentence final decision reason>",
+    "matchedEvidence": [<strong matching points>],
+    "gapSummary": "<key gaps if any, or 'Strong candidate - no major gaps'>",
+    "flags": [<any concerns like seniority mismatch, language gap, etc>],
+    "interviewQuestions": [<3-5 key technical/behavioral questions if Pass>],
+    "followUpQuestions": [<3-5 clarification questions if Need More Info>],
+    "rejectReason": "<clear reason why rejected if Reject>"
   },
   ...
 ]`;

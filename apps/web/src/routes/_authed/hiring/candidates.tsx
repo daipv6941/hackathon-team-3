@@ -29,7 +29,12 @@ function CandidatesPage() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [nameSearch, setNameSearch] = useState('');
+  const [skillSearch, setSkillSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
   const [showForm, setShowForm] = useState(false);
+  const pageSize = 20;
   const [formData, setFormData] = useState({
     cvId: '',
     candidateId: '',
@@ -48,11 +53,21 @@ function CandidatesPage() {
   const loadCandidates = useCallback(async () => {
     try {
       setIsLoading(true);
-      const url =
-        statusFilter === 'all'
-          ? '/api/hiring/v1/candidates'
-          : `/api/hiring/v1/candidates?status=${statusFilter}`;
+      const params = new URLSearchParams();
 
+      if (statusFilter !== 'all') {
+        params.append('status', statusFilter);
+      }
+      if (nameSearch.trim()) {
+        params.append('name', nameSearch.trim());
+      }
+      if (skillSearch.trim()) {
+        params.append('skill', skillSearch.trim());
+      }
+      params.append('limit', String(pageSize));
+      params.append('offset', String(currentPage * pageSize));
+
+      const url = `/api/hiring/v1/candidates?${params.toString()}`;
       const response = await fetch(url, {
         method: 'GET',
         credentials: 'include',
@@ -62,12 +77,13 @@ function CandidatesPage() {
 
       const data = await response.json();
       setCandidates(data.candidates || []);
+      setTotalCount(data.totalCandidates || 0);
     } catch (error) {
       console.error('Load candidates error:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, nameSearch, skillSearch, currentPage]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: ref prevents re-runs on loadCandidates changes
   useEffect(() => {
@@ -360,24 +376,66 @@ function CandidatesPage() {
         </Card>
       )}
 
-      {/* Status Filter */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">Filter by Status:</span>
-        {(['all', 'active', 'inactive'] as const).map((status) => (
-          <button
-            type="button"
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={`px-3 py-1 rounded text-sm transition ${
-              statusFilter === status
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-surface-2 text-ink hover:bg-surface-3'
-            }`}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </button>
-        ))}
-      </div>
+      {/* Search & Filters */}
+      <Card className="p-4">
+        <div className="space-y-4">
+          {/* Search Inputs */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label htmlFor="name-search" className="text-sm font-medium mb-1 block">
+                Search by Name
+              </label>
+              <Input
+                id="name-search"
+                type="text"
+                placeholder="e.g., John Doe"
+                value={nameSearch}
+                onChange={(e) => {
+                  setNameSearch(e.target.value);
+                  setCurrentPage(0);
+                }}
+              />
+            </div>
+            <div>
+              <label htmlFor="skill-search" className="text-sm font-medium mb-1 block">
+                Search by Skill
+              </label>
+              <Input
+                id="skill-search"
+                type="text"
+                placeholder="e.g., React, Python"
+                value={skillSearch}
+                onChange={(e) => {
+                  setSkillSearch(e.target.value);
+                  setCurrentPage(0);
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">Filter by Status:</span>
+            {(['all', 'active', 'inactive'] as const).map((status) => (
+              <button
+                type="button"
+                key={status}
+                onClick={() => {
+                  setStatusFilter(status);
+                  setCurrentPage(0);
+                }}
+                className={`px-3 py-1 rounded text-sm transition ${
+                  statusFilter === status
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-surface-2 text-ink hover:bg-surface-3'
+                }`}
+              >
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
 
       {/* Candidates List */}
       {isLoading ? (
@@ -468,6 +526,35 @@ function CandidatesPage() {
               </div>
             </Card>
           ))}
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between mt-6 pt-4 border-t">
+            <div className="text-sm text-ink-subtle">
+              Showing {currentPage * pageSize + 1} to{' '}
+              {Math.min((currentPage + 1) * pageSize, totalCount)} of {totalCount} candidates
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={currentPage === 0}
+                onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-ink-subtle px-2">
+                Page {currentPage + 1} of {Math.ceil(totalCount / pageSize) || 1}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={(currentPage + 1) * pageSize >= totalCount}
+                onClick={() => setCurrentPage(currentPage + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import type { Mastra } from '@mastra/core';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import type { Hono } from 'hono';
 import { stream } from 'hono/streaming';
@@ -1133,25 +1133,51 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
     try {
       const db = getDb();
       const status = c.req.query('status');
+      const name = c.req.query('name');
+      const skill = c.req.query('skill');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
 
-      let candidates: Record<string, unknown>[];
+      // Build filter conditions array
+      const whereConditions = [];
+
       if (status && ['active', 'inactive'].includes(status)) {
-        candidates = await db
-          .select()
-          .from(schema.hiringCandidates)
-          .where(eq(schema.hiringCandidates.status, status))
-          .orderBy(desc(schema.hiringCandidates.created_at));
-      } else {
-        candidates = await db
-          .select()
-          .from(schema.hiringCandidates)
-          .orderBy(desc(schema.hiringCandidates.created_at));
+        whereConditions.push(eq(schema.hiringCandidates.status, status));
       }
+
+      if (name) {
+        whereConditions.push(ilike(schema.hiringCandidates.full_name, `%${name}%`));
+      }
+
+      if (skill) {
+        whereConditions.push(ilike(schema.hiringCandidates.cv_skills, `%${skill}%`));
+      }
+
+      // Get candidates
+      let candidatesBaseQuery = db.select().from(schema.hiringCandidates);
+      let countBaseQuery = db.select({ count: count() }).from(schema.hiringCandidates);
+
+      if (whereConditions.length > 0) {
+        const whereClause = whereConditions.length === 1 ? whereConditions[0] : and(...(whereConditions as any));
+        candidatesBaseQuery = candidatesBaseQuery.where(whereClause) as any;
+        countBaseQuery = countBaseQuery.where(whereClause) as any;
+      }
+
+      const candidates = await (candidatesBaseQuery as any)
+        .orderBy(desc(schema.hiringCandidates.created_at))
+        .limit(limit)
+        .offset(offset);
+
+      // Get total count
+      const countResult = await countBaseQuery;
+      const totalCount = (countResult[0]?.count as number) || 0;
 
       return c.json({
         success: true,
-        totalCandidates: candidates.length,
-        candidates: candidates.map((c) => ({
+        totalCandidates: totalCount,
+        limit,
+        offset,
+        candidates: candidates.map((c: any) => ({
           id: c.id,
           cvId: c.cv_id,
           candidateId: c.candidate_id,
@@ -1244,6 +1270,80 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
     } catch (error) {
       console.error('Add candidate error:', error);
       return c.json({ error: 'Failed to add candidate' }, 500);
+    }
+  });
+
+  app.post('/v1/candidates/seed/test-data', async (c) => {
+    try {
+      const db = getDb();
+      const skills = [
+        'React,TypeScript,Node.js',
+        'Python,Django,PostgreSQL',
+        'Java,Spring Boot,Microservices',
+        'Vue.js,JavaScript,CSS',
+        'Go,Docker,Kubernetes',
+        'C++,System Design',
+        'Ruby,Rails,MongoDB',
+        'Rust,WebAssembly',
+        'PHP,Laravel,MySQL',
+        'Scala,Spark,Big Data',
+      ];
+
+      const companies = [
+        'Google',
+        'Facebook',
+        'Amazon',
+        'Microsoft',
+        'Apple',
+        'Netflix',
+        'Tesla',
+        'Airbnb',
+        'Uber',
+        'Stripe',
+      ];
+
+      const titles = [
+        'Senior Software Engineer',
+        'Full Stack Developer',
+        'Frontend Engineer',
+        'Backend Engineer',
+        'DevOps Engineer',
+        'Data Engineer',
+        'ML Engineer',
+        'Solutions Architect',
+      ];
+
+      const englishLevels = ['B1', 'B2', 'C1', 'C2'];
+      const salaryRanges = ['$50k-$70k', '$70k-$90k', '$90k-$120k', '$120k-$150k', '$150k+'];
+
+      // Create 20 test candidates
+      const candidates = [];
+      for (let i = 1; i <= 20; i++) {
+        candidates.push({
+          tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+          cv_id: `CV_${String(i).padStart(3, '0')}`,
+          candidate_id: `CAND_${String(i).padStart(3, '0')}`,
+          full_name: `Candidate ${i}`,
+          current_title: titles[i % titles.length],
+          current_company: companies[i % companies.length],
+          years_of_experience: 2 + (i % 8),
+          cv_skills: skills[i % skills.length],
+          english_level: englishLevels[i % englishLevels.length],
+          salary_expectation: salaryRanges[i % salaryRanges.length],
+          status: i % 5 === 0 ? 'inactive' : 'active',
+        });
+      }
+
+      await db.insert(schema.hiringCandidates).values(candidates as any).onConflictDoNothing();
+
+      return c.json({
+        success: true,
+        message: 'Seeded 20 test candidates',
+        candidates: candidates.length,
+      });
+    } catch (error) {
+      console.error('Seed error:', error);
+      return c.json({ error: 'Failed to seed candidates' }, 500);
     }
   });
 
