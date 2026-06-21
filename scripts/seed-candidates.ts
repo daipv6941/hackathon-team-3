@@ -73,7 +73,10 @@ async function seedCandidates() {
       });
     }
 
-    await db.insert(schema.hiringCandidates).values(candidates as any).onConflictDoNothing();
+    await db
+      .insert(schema.hiringCandidates)
+      .values(candidates as any)
+      .onConflictDoNothing();
 
     console.log(`✅ Seeded ${candidates.length} test candidates successfully!`);
   } catch (error) {
