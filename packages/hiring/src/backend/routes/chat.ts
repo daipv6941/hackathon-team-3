@@ -456,6 +456,13 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       });
 
       // Parse JD text to extract structured fields
+      const parsePosition = (text: string): string => {
+        // Try both formats: **Job Title: ...** or # Job Title
+        let match = text.match(/\*\*Job Title:\s*([^\*\n]+)\*\*/i);
+        if (!match) match = text.match(/^#+\s+([^\n]+)/m);
+        return match ? match[1].trim() : 'TBD';
+      };
+
       const parseMustHaveRequirements = (text: string): string => {
         // Try both markdown header styles
         let match = text.match(/\*\*Requirements:\*\*([\s\S]*?)(?=\*\*|###|$)/i);
@@ -517,6 +524,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
           .join('; ');
       };
 
+      const position = parsePosition(jdText);
       const mustHaveSkills = parseMustHaveRequirements(jdText);
       const niceToHaveSkills = parseNiceToHave(jdText);
       const minYoe = parseYearsOfExperience(jdText);
@@ -525,6 +533,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       const keyResponsibilities = parseResponsibilities(jdText);
 
       console.log('📋 Parsed JD data:', {
+        position,
         mustHaveSkills: mustHaveSkills.substring(0, 50) + '...',
         niceToHaveSkills: niceToHaveSkills.substring(0, 50) + '...',
         minYoe,
@@ -536,7 +545,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         jd_id: jdId,
         request_id: requestId,
-        position: 'TBD',
+        position,
         seniority_level: 'Senior',
         min_yoe: minYoe,
         english_level_required: englishLevel,

@@ -888,13 +888,18 @@ Return ONLY valid JSON (no markdown, no code blocks):
     const parsed = JSON.parse(cleanedText);
 
     const fitScore = Math.min(100, Math.max(0, parsed.final_cv_fit_score || 0));
-    const getRecommendation = (score: number): 'Pass' | 'Reject' | 'Need More Info' => {
+    const mustHaveSkillsScore = parsed.category_scores?.must_have_skills_match || 0;
+
+    const getRecommendation = (score: number, mustHaveScore: number): 'Pass' | 'Reject' | 'Need More Info' => {
+      // Hard gate: if no must-have skills match, reject regardless of other scores
+      if (mustHaveScore === 0) return 'Reject';
+
       if (score >= 75) return 'Pass';
       if (score < 40) return 'Reject';
       return 'Need More Info';
     };
 
-    const recommendation = getRecommendation(fitScore);
+    const recommendation = getRecommendation(fitScore, mustHaveSkillsScore);
 
     return {
       fitScore,
@@ -917,7 +922,9 @@ Return ONLY valid JSON (no markdown, no code blocks):
         recommendation === 'Need More Info' ? parsed.follow_up_questions || [] : [],
       rejectReason:
         recommendation === 'Reject'
-          ? parsed.reject_reason || 'Does not meet job requirements'
+          ? mustHaveSkillsScore === 0
+            ? 'No match on must-have skills - hard gate'
+            : parsed.reject_reason || 'Does not meet job requirements'
           : null,
       fullPrompt: prompt,
     };
@@ -953,13 +960,31 @@ export async function screenManyCvs(input: z.infer<typeof BatchScreenCandidatesI
 
   const SCREEN_CONCURRENCY = 5; // Tune based on OpenAI rate limits
 
+  // Validate & filter candidate pool - skip invalid candidates
+  const validCandidates = input.candidates.filter((c) => {
+    const isValid =
+      c.full_name &&
+      c.full_name.trim().length > 0 &&
+      c.cv_skills &&
+      c.cv_skills.trim() !== 'N/A' &&
+      c.years_of_experience !== undefined &&
+      c.years_of_experience > 0;
+
+    if (!isValid) {
+      console.warn(`⚠️ Skipping invalid candidate: ${c.cv_id} (${c.full_name || 'unnamed'})`);
+    }
+    return isValid;
+  });
+
   console.log('📊 screenManyCvs starting:', {
-    candidateCount: input.candidates.length,
+    totalReceived: input.candidates.length,
+    validCandidates: validCandidates.length,
+    skipped: input.candidates.length - validCandidates.length,
     concurrency: SCREEN_CONCURRENCY,
   });
 
   const results = await runWithConcurrency(
-    input.candidates,
+    validCandidates,
     SCREEN_CONCURRENCY,
     async (candidate) => {
       try {
