@@ -91,12 +91,20 @@ export const ScreenCvInputSchema = z.object({
   jdMustHave: z.string(),
   jdNiceToHave: z.string(),
   jdMinYoe: z.number(),
+  jdFullText: z.string().optional(),
 });
 
 export const BatchScreenCandidatesInputSchema = z.object({
   jdId: z.string(),
   requestId: z.string(),
   tenantId: z.string().uuid(),
+  position: z.string(),
+  seniorityLevel: z.string(),
+  minYoe: z.number(),
+  maxYoe: z.number().optional(),
+  englishLevelRequired: z.string().optional(),
+  salaryRange: z.string().optional(),
+  keyResponsibilities: z.string().optional(),
   candidates: z.array(
     z.object({
       cv_id: z.string(),
@@ -110,7 +118,7 @@ export const BatchScreenCandidatesInputSchema = z.object({
   ),
   jdMustHave: z.string(),
   jdNiceToHave: z.string(),
-  jdMinYoe: z.number(),
+  jdFullText: z.string().optional(),
 });
 
 export const GenerateReportInputSchema = z.object({
@@ -571,7 +579,7 @@ ${input.jdText}`;
   const result = await generateText({
     model,
     prompt,
-    temperature: 0.5,
+    temperature: 0,
   });
 
   try {
@@ -788,13 +796,19 @@ export async function screenCv(input: z.infer<typeof ScreenCvInputSchema>) {
 
   const model = openai('gpt-4-turbo');
 
-  const prompt = `You are a CV Fit Scoring Agent. Score this candidate using the official CV Fit Scoring Guide v2.
-
-APPROVED JD:
+  // Use full JD text if available, otherwise fall back to parsed fields
+  const jdContext = input.jdFullText
+    ? `APPROVED JD (FULL TEXT):
+${input.jdFullText}`
+    : `APPROVED JD (PARSED):
 - Position: ${input.jdId}
 - Must-Have Skills (50 points): ${input.jdMustHave}
 - Nice-to-Have Skills (15 points): ${input.jdNiceToHave}
-- Min YOE: ${input.jdMinYoe} years
+- Min YOE: ${input.jdMinYoe} years`;
+
+  const prompt = `You are a CV Fit Scoring Agent. Score this candidate using the official CV Fit Scoring Guide v2.
+
+${jdContext}
 
 CANDIDATE PROFILE:
 - Name: ${input.candidateName}
@@ -863,7 +877,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
   const result = await generateText({
     model,
     prompt,
-    temperature: 0.5,
+    temperature: 0,
   });
 
   try {
@@ -874,23 +888,32 @@ Return ONLY valid JSON (no markdown, no code blocks):
     const parsed = JSON.parse(cleanedText);
 
     const fitScore = Math.min(100, Math.max(0, parsed.final_cv_fit_score || 0));
-    const getRecommendation = (score: number): 'Pass' | 'Reject' | 'Need More Info' => {
+    const mustHaveSkillsScore = Math.min(50, Math.max(0, parsed.category_scores?.must_have_skills_match || 0));
+    const relevantExpScore = Math.min(20, Math.max(0, parsed.category_scores?.relevant_experience_seniority_match || 0));
+    const languageLevelScore = Math.min(15, Math.max(0, parsed.category_scores?.required_language_level_match || 0));
+    const niceToHaveScore = Math.min(15, Math.max(0, parsed.category_scores?.nice_to_have_skills_match || 0));
+
+    const getRecommendation = (score: number, mustHaveScore: number): 'Pass' | 'Reject' | 'Need More Info' => {
+      // Hard gate: if truly zero must-have skill match, force Reject
+      // But keep the actual fitScore and reason from model for transparency
+      if (mustHaveScore === 0) return 'Reject';
+
       if (score >= 75) return 'Pass';
       if (score < 40) return 'Reject';
       return 'Need More Info';
     };
 
-    const recommendation = getRecommendation(fitScore);
+    const recommendation = getRecommendation(fitScore, mustHaveSkillsScore);
 
     return {
-      fitScore,
+      fitScore, // Keep actual score from model, don't override
       recommendation,
       confidence: parsed.confidence || 'Medium',
       categoryScores: {
-        mustHaveSkills: parsed.category_scores?.must_have_skills_match || 0,
-        relevantExperience: parsed.category_scores?.relevant_experience_seniority_match || 0,
-        languageLevel: parsed.category_scores?.required_language_level_match || 0,
-        niceToHaveSkills: parsed.category_scores?.nice_to_have_skills_match || 0,
+        mustHaveSkills: mustHaveSkillsScore,
+        relevantExperience: relevantExpScore,
+        languageLevel: languageLevelScore,
+        niceToHaveSkills: niceToHaveScore,
       },
       fitSummary: parsed.final_decision_reason || 'Review CV for fit',
       matchedEvidence: parsed.matched_evidence || [],
@@ -927,6 +950,104 @@ Return ONLY valid JSON (no markdown, no code blocks):
       fullPrompt: prompt,
     };
   }
+}
+
+/**
+ * Screen Multiple CVs in Parallel with Concurrency Control
+ * Uses 1:1 screenCv calls with concurrency limit to avoid rate limits
+ * If one CV fails, others continue (no cascade failure)
+ */
+export async function screenManyCvs(input: z.infer<typeof BatchScreenCandidatesInputSchema>) {
+  const { runWithConcurrency } = await import('./utils/concurrency.ts');
+
+  const SCREEN_CONCURRENCY = 5; // Tune based on OpenAI rate limits
+
+  // Validate & filter candidate pool - skip invalid candidates
+  const validCandidates = input.candidates.filter((c) => {
+    const isValid =
+      c.full_name &&
+      c.full_name.trim().length > 0 &&
+      c.cv_skills &&
+      c.cv_skills.trim() !== 'N/A' &&
+      c.years_of_experience !== undefined &&
+      c.years_of_experience > 0;
+
+    if (!isValid) {
+      console.warn(`⚠️ Skipping invalid candidate: ${c.cv_id} (${c.full_name || 'unnamed'})`);
+    }
+    return isValid;
+  });
+
+  console.log('📊 screenManyCvs starting:', {
+    totalReceived: input.candidates.length,
+    validCandidates: validCandidates.length,
+    skipped: input.candidates.length - validCandidates.length,
+    concurrency: SCREEN_CONCURRENCY,
+  });
+
+  const results = await runWithConcurrency(
+    validCandidates,
+    SCREEN_CONCURRENCY,
+    async (candidate) => {
+      try {
+        const screenResult = await screenCv({
+          cvId: candidate.cv_id,
+          jdId: input.jdId,
+          requestId: input.requestId,
+          tenantId: input.tenantId,
+          jdMustHave: input.jdMustHave,
+          jdNiceToHave: input.jdNiceToHave,
+          jdMinYoe: input.minYoe,
+          jdFullText: input.jdFullText,
+          candidateName: candidate.full_name,
+          cvSkills: candidate.cv_skills ?? 'N/A',
+          yearsOfExperience: candidate.years_of_experience ?? 0,
+          englishLevel: candidate.english_level ?? 'B2',
+          salaryExpectation: candidate.salary_expectation ?? 'Negotiable',
+        });
+
+        return {
+          cvId: candidate.cv_id,
+          candidateName: candidate.full_name,
+          ok: true as const,
+          ...screenResult,
+        };
+      } catch (error) {
+        console.error(`❌ screenCv failed for ${candidate.cv_id}:`, error);
+        return {
+          cvId: candidate.cv_id,
+          candidateName: candidate.full_name,
+          ok: false as const,
+          fitScore: 50,
+          recommendation: 'Need More Info' as const,
+          confidence: 'Low' as const,
+          categoryScores: {
+            mustHaveSkills: 0,
+            relevantExperience: 0,
+            languageLevel: 0,
+            niceToHaveSkills: 0,
+          },
+          fitSummary: 'Screening failed - manual review required',
+          matchedEvidence: [],
+          gapSummary: 'Unable to assess',
+          flags: ['Screening error - manual review recommended'],
+          suggestedQuestions: 'Ask about relevant experience',
+          interviewQuestions: [],
+          followUpQuestions: [],
+          rejectReason: null,
+          fullPrompt: '',
+        };
+      }
+    },
+  );
+
+  console.log('✅ screenManyCvs completed:', {
+    total: results.length,
+    successful: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok).length,
+  });
+
+  return results;
 }
 
 /**
@@ -1191,36 +1312,77 @@ export async function* batchScreenCandidatesStream(
     )
     .join('\n');
 
-  const prompt = `You are an expert recruiter. Screen these ${input.candidates.length} candidates against the JD requirements.
+  const prompt = `You are an expert recruiter using the CV Fit Scoring Guide v2. Screen these ${input.candidates.length} candidates against the approved JD using the official scoring methodology.
+
+APPROVED JD:
+**Position:** ${input.position} (${input.seniorityLevel})
+**Experience:** ${input.minYoe}${input.maxYoe ? `-${input.maxYoe}` : '+'} years
+**English Level Required:** ${input.englishLevelRequired || 'B2+'}
+**Salary Range:** ${input.salaryRange || 'Negotiable'}
 
 JD REQUIREMENTS:
-- Must Have Skills: ${input.jdMustHave}
-- Nice to Have: ${input.jdNiceToHave}
-- Min Years of Experience: ${input.jdMinYoe}
+- Must-Have Skills (50 points): ${input.jdMustHave}
+- Nice-to-Have Skills (15 points): ${input.jdNiceToHave}
+${input.keyResponsibilities ? `- Key Responsibilities: ${input.keyResponsibilities}` : ''}
 
 CANDIDATES:
 ${candidatesText}
 
-For EACH candidate, analyze fit and respond ONLY with valid JSON array (no markdown):
+For EACH candidate, score using this EXACT methodology:
+
+SCORING BREAKDOWN (100 points total):
+
+1. MUST-HAVE SKILLS MATCH (50 points)
+   - Match each candidate skill to JD must-haves
+   - Strong Match = 100% credit, Partial Match = 50% credit, No Match = 0%
+   - Divide 50 points equally among must-have skills
+   - Return score/50
+
+2. RELEVANT EXPERIENCE & SENIORITY (20 points)
+   - Total Professional YOE (5 pts): meets/exceeds max = 5, meets min = 4, slightly below = 2, clearly below = 0
+   - Role-Relevant YOE (8 pts): assess if prior roles match ${input.position} job family
+   - Key-Skill YOE (5 pts): experience with must-have skills in right context
+   - Ownership Evidence (2 pts): leadership, mentorship, architecture responsibilities
+   - Return score/20
+
+3. REQUIRED LANGUAGE LEVEL MATCH (15 points)
+   - Required: ${input.englishLevelRequired || 'B2'}
+   - Exceeds requirement = 15, Meets = 12, Slightly below = 6, Clearly below = 0
+   - Return score/15
+
+4. NICE-TO-HAVE SKILLS MATCH (15 points)
+   - Same methodology as must-haves
+   - Divide 15 points equally among nice-to-have skills
+   - Return score/15
+
+RECOMMENDATION THRESHOLDS:
+- 85-100: Strong shortlist (Pass)
+- 75-84: Shortlist (Pass)
+- 60-74: Medium / HM Review (Need More Info)
+- 40-59: Low / Need More Information (Need More Info)
+- <40: Reject / Not Suitable (Reject)
+
+Return ONLY valid JSON array (no markdown, no code blocks):
 [
   {
     "cvId": "CV-XXX",
-    "candidateName": "Name",
-    "fitScore": 0-100,
-    "recommendation": "Pass|Reject|Need More Info",
-    "fitSummary": "Brief fit summary",
-    "gapSummary": "Key gaps if any",
+    "candidateName": "Full Name",
+    "fitScore": <0-100 number>,
+    "recommendation": "<Pass|Reject|Need More Info>",
+    "confidence": "<High|Medium|Low>",
     "categoryScores": {
-      "mustHaveSkills": 0-25,
-      "relevantExperience": 0-25,
-      "languageLevel": 0-25,
-      "niceToHaveSkills": 0-25
+      "mustHaveSkills": <0-50>,
+      "relevantExperience": <0-20>,
+      "languageLevel": <0-15>,
+      "niceToHaveSkills": <0-15>
     },
-    "matchedEvidence": ["evidence1", "evidence2"],
-    "flags": ["flag1", "flag2"],
-    "interviewQuestions": ["q1", "q2"],
-    "followUpQuestions": ["q1", "q2"],
-    "rejectReason": "Reason if rejecting"
+    "fitSummary": "<1-2 sentence final decision reason>",
+    "matchedEvidence": [<strong matching points>],
+    "gapSummary": "<key gaps if any, or 'Strong candidate - no major gaps'>",
+    "flags": [<any concerns like seniority mismatch, language gap, etc>],
+    "interviewQuestions": [<3-5 key technical/behavioral questions if Pass>],
+    "followUpQuestions": [<3-5 clarification questions if Need More Info>],
+    "rejectReason": "<clear reason why rejected if Reject>"
   },
   ...
 ]`;

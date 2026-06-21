@@ -183,7 +183,13 @@
       "Bash(pnpm test *)",
       "Bash(pnpm run *)",
       "Bash(curl -s http://localhost:8000/health)",
-      "Bash(curl -s http://localhost:3000/)"
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(grep -E \"\\\\.\\(tsx?|sql\\)$\")",
+      "Bash(curl -X POST http://localhost:3000/api/hiring/v1/candidates/seed/test-data -H 'Content-Type: application/json' -d '{}')",
+      "Bash(curl -X POST http://localhost:3000/api/hiring/v1/candidates/seed/test-data -H 'Content-Type: application/json' -H 'Cookie: session=test' -d '{}')",
+      "Bash(curl -s -H \"Content-Type: application/json\" \"http://localhost:3000/api/hiring/v1/candidates?limit=5&offset=0\")",
+      "Bash(curl -s \"http://localhost:3000/api/hiring/v1/candidates?limit=5\")",
+      "Bash(curl -s \"http://localhost:3000/api/hiring/v1/candidates\")"
     ],
     "additionalDirectories": [
       "/private/tmp",

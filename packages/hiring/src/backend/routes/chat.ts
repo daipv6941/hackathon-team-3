@@ -1,5 +1,5 @@
 import type { Mastra } from '@mastra/core';
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import type { Hono } from 'hono';
 import { stream } from 'hono/streaming';
@@ -7,13 +7,13 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import * as schema from '../db/index.ts';
 import {
-  batchScreenCandidatesStream,
   draftJdStream,
   extractRequestDetails,
   fetchContext,
   reviseJd,
   scoreJdStream,
   screenCv,
+  screenManyCvs,
 } from '../orchestration.ts';
 
 export interface HiringRouteDeps {
@@ -455,12 +455,104 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         iterations,
       });
 
+      // Parse JD text to extract structured fields
+      const parsePosition = (text: string): string => {
+        // Try both formats: **Job Title: ...** or # Job Title
+        let match = text.match(/\*\*Job Title:\s*([^\*\n]+)\*\*/i);
+        if (!match) match = text.match(/^#+\s+([^\n]+)/m);
+        return match ? match[1].trim() : 'TBD';
+      };
+
+      const parseMustHaveRequirements = (text: string): string => {
+        // Try both markdown header styles
+        let match = text.match(/\*\*Requirements:\*\*([\s\S]*?)(?=\*\*|###|$)/i);
+        if (!match) match = text.match(/### Must-Have Requirements?\n([\s\S]*?)(?=###|$)/i);
+        if (!match) return '';
+
+        return match[1]
+          .split('\n')
+          .filter((line) => line.trim().startsWith('-'))
+          .map((line) => line.replace(/^-\s*/, '').trim())
+          .filter((line) => line.length > 0)
+          .join(', ');
+      };
+
+      const parseNiceToHave = (text: string): string => {
+        // Try both markdown header styles
+        let match = text.match(/\*\*Preferred Qualifications:\*\*([\s\S]*?)(?=\*\*|###|What|$)/i);
+        if (!match) match = text.match(/### Nice-to-Have\n([\s\S]*?)(?=###|$)/i);
+        if (!match) return '';
+
+        return match[1]
+          .split('\n')
+          .filter((line) => line.trim().startsWith('-'))
+          .map((line) => line.replace(/^-\s*/, '').trim())
+          .filter((line) => line.length > 0)
+          .join(', ');
+      };
+
+      const parseYearsOfExperience = (text: string): number => {
+        // Try multiple patterns
+        let match = text.match(/(?:Minimum of|requires?|at least)\s+(\d+)\s+years?/i);
+        if (!match) match = text.match(/Years of Experience[:\s]*(\d+)/i);
+        return match ? parseInt(match[1], 10) : 0;
+      };
+
+      const parseEnglishLevel = (text: string): string => {
+        let match = text.match(/(?:English|Fluent in English)[:\s]*\(?([A-Z]\d)/i);
+        if (!match) match = text.match(/English Level[:\s]*([A-Z]\d)/i);
+        return match ? match[1] : 'B2';
+      };
+
+      const parseSalaryRange = (text: string): string => {
+        const match = text.match(/\*\*Salary Range:\*\*\s*([^\n+]+)/i);
+        return match ? match[1].trim() : 'Negotiable';
+      };
+
+      const parseResponsibilities = (text: string): string => {
+        // Try both header styles
+        let match = text.match(/\*\*Key Responsibilities:\*\*([\s\S]*?)(?=\*\*|###|$)/i);
+        if (!match) match = text.match(/### Responsibilities?\n([\s\S]*?)(?=###|$)/i);
+        if (!match) return '';
+
+        return match[1]
+          .split('\n')
+          .filter((line) => line.trim().startsWith('-'))
+          .map((line) => line.replace(/^-\s*/, '').trim())
+          .filter((line) => line.length > 0)
+          .slice(0, 3) // Get top 3 responsibilities
+          .join('; ');
+      };
+
+      const position = parsePosition(jdText);
+      const mustHaveSkills = parseMustHaveRequirements(jdText);
+      const niceToHaveSkills = parseNiceToHave(jdText);
+      const minYoe = parseYearsOfExperience(jdText);
+      const englishLevel = parseEnglishLevel(jdText);
+      const salaryRange = parseSalaryRange(jdText);
+      const keyResponsibilities = parseResponsibilities(jdText);
+
+      console.log('📋 Parsed JD data:', {
+        position,
+        mustHaveSkills: mustHaveSkills.substring(0, 50) + '...',
+        niceToHaveSkills: niceToHaveSkills.substring(0, 50) + '...',
+        minYoe,
+        englishLevel,
+        salaryRange,
+      });
+
       await db.insert(schema.hiringJobs).values({
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         jd_id: jdId,
         request_id: requestId,
-        position: 'TBD',
+        position,
         seniority_level: 'Senior',
+        min_yoe: minYoe,
+        english_level_required: englishLevel,
+        salary_range: salaryRange,
+        must_have_skills: mustHaveSkills,
+        nice_to_have_skills: niceToHaveSkills,
+        key_responsibilities: keyResponsibilities,
         agent_jd_draft_text: jdText,
         jd_full_text: jdText,
         agent_clarity_score: String(typeof clarityScore === 'number' ? clarityScore : 0),
@@ -533,7 +625,31 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
 
       return stream(c, async (writer) => {
         try {
-          console.log('🎬 Starting batch screening stream...');
+          console.log('🚀 Starting parallel screening (concurrency=5)...');
+          const startTime = Date.now();
+
+          // Run screenManyCvs with concurrency control
+          const results = await screenManyCvs({
+            jdId,
+            requestId,
+            tenantId: '550e8400-e29b-41d4-a716-446655440000',
+            position: jd.position || 'Unknown Position',
+            seniorityLevel: jd.seniority_level || 'Mid-Level',
+            minYoe: jd.min_yoe || 0,
+            maxYoe: jd.max_yoe || undefined,
+            englishLevelRequired: jd.english_level_required || 'B2',
+            salaryRange: jd.salary_range || 'Negotiable',
+            keyResponsibilities: jd.key_responsibilities || undefined,
+            candidates: activeCandidates,
+            jdMustHave: jd.must_have_skills || '',
+            jdNiceToHave: jd.nice_to_have_skills || '',
+            jdFullText: jd.jd_full_text || undefined,
+          });
+
+          const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.log(
+            `✅ Screening complete in ${elapsedSeconds}s: ${results.length} candidates evaluated`,
+          );
 
           const screeningResults: Array<{
             cvId: string;
@@ -547,143 +663,112 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             flags: string[];
             interviewQuestions: string[];
             followUpQuestions: string[];
-            rejectReason: string;
+            rejectReason: string | null;
+            confidence: string;
+            fullPrompt: string;
           }> = [];
 
-          // Stream batch screening with reasoning tokens
-          for await (const chunk of batchScreenCandidatesStream({
-            jdId,
-            requestId,
-            tenantId: '550e8400-e29b-41d4-a716-446655440000',
-            candidates: activeCandidates.map((c) => ({
-              cv_id: c.cv_id,
-              candidate_id: c.candidate_id,
-              full_name: c.full_name,
-              cv_skills: c.cv_skills || undefined,
-              years_of_experience: c.years_of_experience || undefined,
-              english_level: c.english_level || undefined,
-              salary_expectation: c.salary_expectation || undefined,
-            })),
-            jdMustHave: jd.must_have_skills || '',
-            jdNiceToHave: jd.nice_to_have_skills || '',
-            jdMinYoe: jd.min_yoe || 0,
-          })) {
-            // Stream thinking and text tokens to client
-            if (
-              chunk.type === 'text' ||
-              chunk.type === 'thinking-start' ||
-              chunk.type === 'thinking-end'
-            ) {
-              await writer.write(`data: ${JSON.stringify(chunk)}\n\n`);
-            } else if (chunk.type === 'complete' && chunk.data) {
-              const results = (chunk.data as any).results || [];
+          // Save all screening results to database
+          for (const result of results) {
+            try {
+              const candidateData = activeCandidates.find((c) => c.cv_id === result.cvId);
+              await db.insert(schema.hiringShortlistResults).values({
+                tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+                request_id: requestId,
+                jd_id: jdId,
+                cv_id: result.cvId,
+                candidate_id: candidateData?.candidate_id || result.cvId,
+                candidate_name: result.candidateName,
+                fit_score: String(result.fitScore),
+                recommendation: String(result.recommendation),
+                confidence: result.confidence || 'Medium',
+                fit_summary: result.fitSummary as unknown as string,
+                gap_summary: result.gapSummary as unknown as string,
+                category_scores: result.categoryScores as unknown as Record<string, unknown>,
+                matched_evidence: result.matchedEvidence as unknown as Record<string, unknown>,
+                flags: result.flags as unknown as Record<string, unknown>,
+                interview_questions: result.interviewQuestions as unknown as Record<
+                  string,
+                  unknown
+                >,
+                follow_up_questions: result.followUpQuestions as unknown as Record<
+                  string,
+                  unknown
+                >,
+                reject_reason: result.rejectReason as unknown as string,
+              } as any);
 
-              // Save all screening results to database
-              for (const result of results) {
-                try {
-                  const candidateData = activeCandidates.find((c) => c.cv_id === result.cvId);
-                  await db.insert(schema.hiringShortlistResults).values({
-                    tenant_id: '550e8400-e29b-41d4-a716-446655440000',
-                    request_id: requestId,
-                    jd_id: jdId,
-                    cv_id: result.cvId,
-                    candidate_id: candidateData?.candidate_id || result.cvId,
-                    candidate_name: result.candidateName,
-                    fit_score: String(result.fitScore),
-                    recommendation: String(result.recommendation),
-                    confidence: 'High',
-                    fit_summary: result.fitSummary as unknown as string,
-                    gap_summary: result.gapSummary as unknown as string,
-                    category_scores: result.categoryScores as unknown as Record<string, unknown>,
-                    matched_evidence: result.matchedEvidence as unknown as Record<string, unknown>,
-                    flags: result.flags as unknown as Record<string, unknown>,
-                    interview_questions: result.interviewQuestions as unknown as Record<
-                      string,
-                      unknown
-                    >,
-                    follow_up_questions: result.followUpQuestions as unknown as Record<
-                      string,
-                      unknown
-                    >,
-                    reject_reason: result.rejectReason as unknown as string,
-                  } as any);
+              screeningResults.push({
+                cvId: result.cvId,
+                candidateName: result.candidateName,
+                fitScore: result.fitScore || 0,
+                recommendation: result.recommendation || 'Need More Info',
+                fitSummary: result.fitSummary || '',
+                gapSummary: result.gapSummary || '',
+                categoryScores: result.categoryScores || {},
+                matchedEvidence: result.matchedEvidence || [],
+                flags: result.flags || [],
+                interviewQuestions: result.interviewQuestions || [],
+                followUpQuestions: result.followUpQuestions || [],
+                rejectReason: result.rejectReason || null,
+                confidence: result.confidence || 'Medium',
+                fullPrompt: result.fullPrompt || '',
+              });
+            } catch (saveError) {
+              console.error(`Failed to save result for ${result.candidateName}:`, saveError);
+            }
+          }
 
-                  screeningResults.push({
-                    cvId: result.cvId,
-                    candidateName: result.candidateName,
-                    fitScore: result.fitScore || 0,
-                    recommendation: result.recommendation || 'Need More Info',
-                    fitSummary: result.fitSummary || '',
-                    gapSummary: result.gapSummary || '',
-                    categoryScores: result.categoryScores || {},
-                    matchedEvidence: result.matchedEvidence || [],
-                    flags: result.flags || [],
-                    interviewQuestions: result.interviewQuestions || [],
-                    followUpQuestions: result.followUpQuestions || [],
-                    rejectReason: result.rejectReason || '',
-                  });
-                } catch (saveError) {
-                  console.error(`Failed to save result for ${result.candidateName}:`, saveError);
-                }
-              }
+          // Sort by fit score descending
+          const sorted = screeningResults.sort((a, b) => b.fitScore - a.fitScore);
 
-              // Sort by fit score descending
-              const sorted = screeningResults.sort((a, b) => b.fitScore - a.fitScore);
+          // Categorize candidates
+          const passCandidates = sorted.filter((c) => c.recommendation === 'Pass');
+          const needMoreInfoCandidates = sorted.filter(
+            (c) => c.recommendation === 'Need More Info',
+          );
+          const rejectCandidates = sorted.filter((c) => c.recommendation === 'Reject');
 
-              // Categorize candidates
-              const passCandidates = sorted.filter((c) => c.recommendation === 'Pass');
-              const needMoreInfoCandidates = sorted.filter(
-                (c) => c.recommendation === 'Need More Info',
-              );
-              const rejectCandidates = sorted.filter((c) => c.recommendation === 'Reject');
+          // Calculate percentages
+          const total = activeCandidates.length || 1;
+          const passPercentage = Math.round((passCandidates.length / total) * 100);
+          const needMoreInfoPercentage = Math.round(
+            (needMoreInfoCandidates.length / total) * 100,
+          );
+          const rejectPercentage = Math.round((rejectCandidates.length / total) * 100);
 
-              // Calculate percentages
-              const total = activeCandidates.length || 1;
-              const passPercentage = Math.round((passCandidates.length / total) * 100);
-              const needMoreInfoPercentage = Math.round(
-                (needMoreInfoCandidates.length / total) * 100,
-              );
-              const rejectPercentage = Math.round((rejectCandidates.length / total) * 100);
-
-              // Stream final report
-              const reportMessage = {
-                type: 'result',
-                content: `## 📋 Screening Report
+          // Stream final report
+          const reportMessage = {
+            type: 'result',
+            content: `## 📋 Screening Report (${elapsedSeconds}s)
 
 **Total Candidates Evaluated:** ${total}
 - ✅ Pass: ${passCandidates.length} (${passPercentage}%)
 - ⚠️ Need More Info: ${needMoreInfoCandidates.length} (${needMoreInfoPercentage}%)
 - ❌ Reject: ${rejectCandidates.length} (${rejectPercentage}%)`,
-                metadata: {
-                  reportId: `report-${Date.now()}`,
-                  requestId,
-                  jdId,
-                  position: jd.position,
-                  totalCandidates: total,
-                  statistics: {
-                    passCandidates: passCandidates.length,
-                    passPercentage,
-                    needMoreInfoCandidates: needMoreInfoCandidates.length,
-                    needMoreInfoPercentage,
-                    rejectCandidates: rejectCandidates.length,
-                    rejectPercentage,
-                  },
-                  scoredCandidates: sorted,
-                },
-              };
+            metadata: {
+              reportId: `report-${Date.now()}`,
+              requestId,
+              jdId,
+              position: jd.position,
+              totalCandidates: total,
+              statistics: {
+                passCandidates: passCandidates.length,
+                passPercentage,
+                needMoreInfoCandidates: needMoreInfoCandidates.length,
+                needMoreInfoPercentage,
+                rejectCandidates: rejectCandidates.length,
+                rejectPercentage,
+              },
+              scoredCandidates: sorted,
+            },
+          };
 
-              await writer.write(`data: ${JSON.stringify(reportMessage)}\n\n`);
-            } else if (chunk.type === 'error') {
-              console.error('Screening error:', (chunk as any).message);
-              await writer.write(
-                `data: ${JSON.stringify({ type: 'error', content: 'Screening failed' })}\n\n`,
-              );
-            }
-          }
+          await writer.write(`data: ${JSON.stringify(reportMessage)}\n\n`);
         } catch (error) {
-          console.error('Stream error:', error);
+          console.error('Screening error:', error);
           await writer.write(
-            `data: ${JSON.stringify({ type: 'error', content: 'Stream processing failed' })}\n\n`,
+            `data: ${JSON.stringify({ type: 'error', content: 'Screening failed: ' + String(error) })}\n\n`,
           );
         }
       });
@@ -1133,25 +1218,51 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
     try {
       const db = getDb();
       const status = c.req.query('status');
+      const name = c.req.query('name');
+      const skill = c.req.query('skill');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
 
-      let candidates: Record<string, unknown>[];
+      // Build filter conditions array
+      const whereConditions = [];
+
       if (status && ['active', 'inactive'].includes(status)) {
-        candidates = await db
-          .select()
-          .from(schema.hiringCandidates)
-          .where(eq(schema.hiringCandidates.status, status))
-          .orderBy(desc(schema.hiringCandidates.created_at));
-      } else {
-        candidates = await db
-          .select()
-          .from(schema.hiringCandidates)
-          .orderBy(desc(schema.hiringCandidates.created_at));
+        whereConditions.push(eq(schema.hiringCandidates.status, status));
       }
+
+      if (name) {
+        whereConditions.push(ilike(schema.hiringCandidates.full_name, `%${name}%`));
+      }
+
+      if (skill) {
+        whereConditions.push(ilike(schema.hiringCandidates.cv_skills, `%${skill}%`));
+      }
+
+      // Get candidates
+      let candidatesBaseQuery = db.select().from(schema.hiringCandidates);
+      let countBaseQuery = db.select({ count: count() }).from(schema.hiringCandidates);
+
+      if (whereConditions.length > 0) {
+        const whereClause = whereConditions.length === 1 ? whereConditions[0] : and(...(whereConditions as any));
+        candidatesBaseQuery = candidatesBaseQuery.where(whereClause) as any;
+        countBaseQuery = countBaseQuery.where(whereClause) as any;
+      }
+
+      const candidates = await (candidatesBaseQuery as any)
+        .orderBy(desc(schema.hiringCandidates.created_at))
+        .limit(limit)
+        .offset(offset);
+
+      // Get total count
+      const countResult = await countBaseQuery;
+      const totalCount = (countResult[0]?.count as number) || 0;
 
       return c.json({
         success: true,
-        totalCandidates: candidates.length,
-        candidates: candidates.map((c) => ({
+        totalCandidates: totalCount,
+        limit,
+        offset,
+        candidates: candidates.map((c: any) => ({
           id: c.id,
           cvId: c.cv_id,
           candidateId: c.candidate_id,
@@ -1244,6 +1355,80 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
     } catch (error) {
       console.error('Add candidate error:', error);
       return c.json({ error: 'Failed to add candidate' }, 500);
+    }
+  });
+
+  app.post('/v1/candidates/seed/test-data', async (c) => {
+    try {
+      const db = getDb();
+      const skills = [
+        'React,TypeScript,Node.js',
+        'Python,Django,PostgreSQL',
+        'Java,Spring Boot,Microservices',
+        'Vue.js,JavaScript,CSS',
+        'Go,Docker,Kubernetes',
+        'C++,System Design',
+        'Ruby,Rails,MongoDB',
+        'Rust,WebAssembly',
+        'PHP,Laravel,MySQL',
+        'Scala,Spark,Big Data',
+      ];
+
+      const companies = [
+        'Google',
+        'Facebook',
+        'Amazon',
+        'Microsoft',
+        'Apple',
+        'Netflix',
+        'Tesla',
+        'Airbnb',
+        'Uber',
+        'Stripe',
+      ];
+
+      const titles = [
+        'Senior Software Engineer',
+        'Full Stack Developer',
+        'Frontend Engineer',
+        'Backend Engineer',
+        'DevOps Engineer',
+        'Data Engineer',
+        'ML Engineer',
+        'Solutions Architect',
+      ];
+
+      const englishLevels = ['B1', 'B2', 'C1', 'C2'];
+      const salaryRanges = ['$50k-$70k', '$70k-$90k', '$90k-$120k', '$120k-$150k', '$150k+'];
+
+      // Create 20 test candidates
+      const candidates = [];
+      for (let i = 1; i <= 20; i++) {
+        candidates.push({
+          tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+          cv_id: `CV_${String(i).padStart(3, '0')}`,
+          candidate_id: `CAND_${String(i).padStart(3, '0')}`,
+          full_name: `Candidate ${i}`,
+          current_title: titles[i % titles.length],
+          current_company: companies[i % companies.length],
+          years_of_experience: 2 + (i % 8),
+          cv_skills: skills[i % skills.length],
+          english_level: englishLevels[i % englishLevels.length],
+          salary_expectation: salaryRanges[i % salaryRanges.length],
+          status: i % 5 === 0 ? 'inactive' : 'active',
+        });
+      }
+
+      await db.insert(schema.hiringCandidates).values(candidates as any).onConflictDoNothing();
+
+      return c.json({
+        success: true,
+        message: 'Seeded 20 test candidates',
+        candidates: candidates.length,
+      });
+    } catch (error) {
+      console.error('Seed error:', error);
+      return c.json({ error: 'Failed to seed candidates' }, 500);
     }
   });
 

@@ -23,14 +23,21 @@ interface ScoredCandidate {
   candidateName: string;
   fitScore: number;
   recommendation: 'Pass' | 'Reject' | 'Need More Info';
+  confidence: 'High' | 'Medium' | 'Low';
   fitSummary: string;
   gapSummary: string;
-  categoryScores: Record<string, number>;
+  categoryScores: {
+    mustHaveSkills: number;
+    relevantExperience: number;
+    languageLevel: number;
+    niceToHaveSkills: number;
+  };
   matchedEvidence: string[];
   flags: string[];
   interviewQuestions: string[];
   followUpQuestions: string[];
   rejectReason: string;
+  fullPrompt: string;
 }
 
 interface BatchScreeningResult {
@@ -309,13 +316,13 @@ Ready to screen candidates?`,
 ## 📊 Shortlist Report
 
 **Position:** ${result.position || 'TBD'}
-**Total Candidates:** ${result.totalCandidates}
+**Total Candidates Screened:** ${result.totalCandidates}
 
 ### 📈 Summary by Recommendation
 
-- **✅ PASS (${stats.passPercentage || 0}%)**: ${stats.passCandidates || 0} candidates
-- **⚠️ NEED MORE INFO (${stats.needMoreInfoPercentage || 0}%)**: ${stats.needMoreInfoCandidates || 0} candidates
-- **❌ REJECT (${stats.rejectPercentage || 0}%)**: ${stats.rejectCandidates || 0} candidates
+- **✅ PASS (${stats.passPercentage || 0}%)**: ${stats.passCandidates || 0} candidates ready for interview
+- **⚠️ NEED MORE INFO (${stats.needMoreInfoPercentage || 0}%)**: ${stats.needMoreInfoCandidates || 0} candidates need clarification
+- **❌ REJECT (${stats.rejectPercentage || 0}%)**: ${stats.rejectCandidates || 0} candidates not suitable
 
 ${
   passCandidates.length > 0
@@ -324,10 +331,22 @@ ${
 ${passCandidates
   .map(
     (c: ScoredCandidate) => `
-**${c.candidateName}** - Score: ${c.fitScore}/100
-- Summary: ${c.fitSummary}
-- Interview Questions:
-${(c.interviewQuestions || []).map((q: string) => `  - ${q}`).join('\n')}
+**${c.candidateName}** - Score: **${c.fitScore}/100** (Confidence: ${c.confidence})
+
+**Category Scores:**
+- Must-Have Skills: ${c.categoryScores.mustHaveSkills}/50
+- Relevant Experience: ${c.categoryScores.relevantExperience}/20
+- Language Level: ${c.categoryScores.languageLevel}/15
+- Nice-to-Have Skills: ${c.categoryScores.niceToHaveSkills}/15
+
+**Fit Summary:** ${c.fitSummary}
+
+${c.matchedEvidence.length > 0 ? `**Matched Evidence:** ${c.matchedEvidence.join(', ')}\n` : ''}
+
+${c.flags.length > 0 ? `**Flags:** ${c.flags.join(', ')}\n` : ''}
+
+**Interview Questions:**
+${(c.interviewQuestions || []).map((q: string) => `- ${q}`).join('\n')}
 `,
   )
   .join('\n')}
@@ -342,10 +361,22 @@ ${
 ${needMoreInfoCandidates
   .map(
     (c: ScoredCandidate) => `
-**${c.candidateName}** - Score: ${c.fitScore}/100
-- Summary: ${c.fitSummary}
-- Follow-up Questions:
-${(c.followUpQuestions || []).map((q: string) => `  - ${q}`).join('\n')}
+**${c.candidateName}** - Score: **${c.fitScore}/100** (Confidence: ${c.confidence})
+
+**Category Scores:**
+- Must-Have Skills: ${c.categoryScores.mustHaveSkills}/50
+- Relevant Experience: ${c.categoryScores.relevantExperience}/20
+- Language Level: ${c.categoryScores.languageLevel}/15
+- Nice-to-Have Skills: ${c.categoryScores.niceToHaveSkills}/15
+
+**Fit Summary:** ${c.fitSummary}
+
+**Gaps:** ${c.gapSummary}
+
+${c.flags.length > 0 ? `**Flags:** ${c.flags.join(', ')}\n` : ''}
+
+**Follow-up Questions:**
+${(c.followUpQuestions || []).map((q: string) => `- ${q}`).join('\n')}
 `,
   )
   .join('\n')}
@@ -358,7 +389,19 @@ ${
     ? `### ❌ REJECT Candidates
 
 ${rejectCandidates
-  .map((c: ScoredCandidate) => `- **${c.candidateName}** (${c.fitScore}/100): ${c.rejectReason}`)
+  .map(
+    (c: ScoredCandidate) => `
+**${c.candidateName}** - Score: **${c.fitScore}/100**
+
+**Category Scores:**
+- Must-Have Skills: ${c.categoryScores.mustHaveSkills}/50
+- Relevant Experience: ${c.categoryScores.relevantExperience}/20
+- Language Level: ${c.categoryScores.languageLevel}/15
+- Nice-to-Have Skills: ${c.categoryScores.niceToHaveSkills}/15
+
+**Reason:** ${c.rejectReason}
+`,
+  )
   .join('\n')}
 `
     : ''
