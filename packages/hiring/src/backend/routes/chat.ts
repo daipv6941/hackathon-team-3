@@ -640,6 +640,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             followUpQuestions: string[];
             rejectReason: string | null;
             confidence: string;
+            fullPrompt: string;
           }> = [];
 
           // Save all screening results to database
@@ -686,6 +687,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
                 followUpQuestions: result.followUpQuestions || [],
                 rejectReason: result.rejectReason || null,
                 confidence: result.confidence || 'Medium',
+                fullPrompt: result.fullPrompt || '',
               });
             } catch (saveError) {
               console.error(`Failed to save result for ${result.candidateName}:`, saveError);

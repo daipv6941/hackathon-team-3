@@ -37,6 +37,7 @@ interface ScoredCandidate {
   interviewQuestions: string[];
   followUpQuestions: string[];
   rejectReason: string;
+  fullPrompt: string;
 }
 
 interface BatchScreeningResult {
