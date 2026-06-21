@@ -458,7 +458,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       // Parse JD text to extract structured fields
       const parsePosition = (text: string): string => {
         // Try both formats: **Job Title: ...** or # Job Title
-        let match = text.match(/\*\*Job Title:\s*([^\*\n]+)\*\*/i);
+        let match = text.match(/\*\*Job Title:\s*([^*\n]+)\*\*/i);
         if (!match) match = text.match(/^#+\s+([^\n]+)/m);
         return match ? match[1]!.trim() : 'TBD';
       };
@@ -699,10 +699,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
                   string,
                   unknown
                 >,
-                follow_up_questions: result.followUpQuestions as unknown as Record<
-                  string,
-                  unknown
-                >,
+                follow_up_questions: result.followUpQuestions as unknown as Record<string, unknown>,
                 reject_reason: result.rejectReason as unknown as string,
               } as any);
 
@@ -740,9 +737,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
           // Calculate percentages
           const total = activeCandidates.length || 1;
           const passPercentage = Math.round((passCandidates.length / total) * 100);
-          const needMoreInfoPercentage = Math.round(
-            (needMoreInfoCandidates.length / total) * 100,
-          );
+          const needMoreInfoPercentage = Math.round((needMoreInfoCandidates.length / total) * 100);
           const rejectPercentage = Math.round((rejectCandidates.length / total) * 100);
 
           // Stream final report
@@ -1251,7 +1246,8 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       let countBaseQuery = db.select({ count: count() }).from(schema.hiringCandidates);
 
       if (whereConditions.length > 0) {
-        const whereClause = whereConditions.length === 1 ? whereConditions[0] : and(...(whereConditions as any));
+        const whereClause =
+          whereConditions.length === 1 ? whereConditions[0] : and(...(whereConditions as any));
         candidatesBaseQuery = candidatesBaseQuery.where(whereClause) as any;
         countBaseQuery = countBaseQuery.where(whereClause) as any;
       }
@@ -1427,7 +1423,10 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         });
       }
 
-      await db.insert(schema.hiringCandidates).values(candidates as any).onConflictDoNothing();
+      await db
+        .insert(schema.hiringCandidates)
+        .values(candidates as any)
+        .onConflictDoNothing();
 
       return c.json({
         success: true,

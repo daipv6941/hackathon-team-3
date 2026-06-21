@@ -888,12 +888,27 @@ Return ONLY valid JSON (no markdown, no code blocks):
     const parsed = JSON.parse(cleanedText);
 
     const fitScore = Math.min(100, Math.max(0, parsed.final_cv_fit_score || 0));
-    const mustHaveSkillsScore = Math.min(50, Math.max(0, parsed.category_scores?.must_have_skills_match || 0));
-    const relevantExpScore = Math.min(20, Math.max(0, parsed.category_scores?.relevant_experience_seniority_match || 0));
-    const languageLevelScore = Math.min(15, Math.max(0, parsed.category_scores?.required_language_level_match || 0));
-    const niceToHaveScore = Math.min(15, Math.max(0, parsed.category_scores?.nice_to_have_skills_match || 0));
+    const mustHaveSkillsScore = Math.min(
+      50,
+      Math.max(0, parsed.category_scores?.must_have_skills_match || 0),
+    );
+    const relevantExpScore = Math.min(
+      20,
+      Math.max(0, parsed.category_scores?.relevant_experience_seniority_match || 0),
+    );
+    const languageLevelScore = Math.min(
+      15,
+      Math.max(0, parsed.category_scores?.required_language_level_match || 0),
+    );
+    const niceToHaveScore = Math.min(
+      15,
+      Math.max(0, parsed.category_scores?.nice_to_have_skills_match || 0),
+    );
 
-    const getRecommendation = (score: number, mustHaveScore: number): 'Pass' | 'Reject' | 'Need More Info' => {
+    const getRecommendation = (
+      score: number,
+      mustHaveScore: number,
+    ): 'Pass' | 'Reject' | 'Need More Info' => {
       // Hard gate: if truly zero must-have skill match, force Reject
       // But keep the actual fitScore and reason from model for transparency
       if (mustHaveScore === 0) return 'Reject';

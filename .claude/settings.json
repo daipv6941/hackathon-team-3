@@ -190,7 +190,10 @@
       "Bash(curl -s -H \"Content-Type: application/json\" \"http://localhost:3000/api/hiring/v1/candidates?limit=5&offset=0\")",
       "Bash(curl -s \"http://localhost:3000/api/hiring/v1/candidates?limit=5\")",
       "Bash(curl -s \"http://localhost:3000/api/hiring/v1/candidates\")",
-      "Bash(pnpm turbo *)"
+      "Bash(pnpm turbo *)",
+      "Bash(pnpm biome *)",
+      "Bash(pnpm lint:boundaries)",
+      "Bash(pnpm depcruise *)"
     ],
     "additionalDirectories": [
       "/private/tmp",
