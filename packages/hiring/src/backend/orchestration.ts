@@ -97,6 +97,13 @@ export const BatchScreenCandidatesInputSchema = z.object({
   jdId: z.string(),
   requestId: z.string(),
   tenantId: z.string().uuid(),
+  position: z.string(),
+  seniorityLevel: z.string(),
+  minYoe: z.number(),
+  maxYoe: z.number().optional(),
+  englishLevelRequired: z.string().optional(),
+  salaryRange: z.string().optional(),
+  keyResponsibilities: z.string().optional(),
   candidates: z.array(
     z.object({
       cv_id: z.string(),
@@ -110,7 +117,6 @@ export const BatchScreenCandidatesInputSchema = z.object({
   ),
   jdMustHave: z.string(),
   jdNiceToHave: z.string(),
-  jdMinYoe: z.number(),
 });
 
 export const GenerateReportInputSchema = z.object({
@@ -1193,10 +1199,16 @@ export async function* batchScreenCandidatesStream(
 
   const prompt = `You are an expert recruiter using the CV Fit Scoring Guide v2. Screen these ${input.candidates.length} candidates against the approved JD using the official scoring methodology.
 
-APPROVED JD REQUIREMENTS:
+APPROVED JD:
+**Position:** ${input.position} (${input.seniorityLevel})
+**Experience:** ${input.minYoe}${input.maxYoe ? `-${input.maxYoe}` : '+'} years
+**English Level Required:** ${input.englishLevelRequired || 'B2+'}
+**Salary Range:** ${input.salaryRange || 'Negotiable'}
+
+JD REQUIREMENTS:
 - Must-Have Skills (50 points): ${input.jdMustHave}
 - Nice-to-Have Skills (15 points): ${input.jdNiceToHave}
-- Min Years of Experience: ${input.jdMinYoe} years
+${input.keyResponsibilities ? `- Key Responsibilities: ${input.keyResponsibilities}` : ''}
 
 CANDIDATES:
 ${candidatesText}
@@ -1212,13 +1224,14 @@ SCORING BREAKDOWN (100 points total):
    - Return score/50
 
 2. RELEVANT EXPERIENCE & SENIORITY (20 points)
-   - Total Professional YOE (5 pts): meets/exceeds = 5, slightly below = 3, clearly below = 1
-   - Role-Relevant YOE (8 pts): assess if prior roles match this job family
-   - Key-Skill YOE (5 pts): experience with specific skills in right context
+   - Total Professional YOE (5 pts): meets/exceeds max = 5, meets min = 4, slightly below = 2, clearly below = 0
+   - Role-Relevant YOE (8 pts): assess if prior roles match ${input.position} job family
+   - Key-Skill YOE (5 pts): experience with must-have skills in right context
    - Ownership Evidence (2 pts): leadership, mentorship, architecture responsibilities
    - Return score/20
 
 3. REQUIRED LANGUAGE LEVEL MATCH (15 points)
+   - Required: ${input.englishLevelRequired || 'B2'}
    - Exceeds requirement = 15, Meets = 12, Slightly below = 6, Clearly below = 0
    - Return score/15
 

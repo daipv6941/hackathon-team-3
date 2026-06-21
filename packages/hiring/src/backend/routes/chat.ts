@@ -555,6 +555,13 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             jdId,
             requestId,
             tenantId: '550e8400-e29b-41d4-a716-446655440000',
+            position: jd.position || 'Unknown Position',
+            seniorityLevel: jd.seniority_level || 'Mid-Level',
+            minYoe: jd.min_yoe || 0,
+            maxYoe: jd.max_yoe || undefined,
+            englishLevelRequired: jd.english_level_required || 'B2',
+            salaryRange: jd.salary_range || 'Negotiable',
+            keyResponsibilities: jd.key_responsibilities || undefined,
             candidates: activeCandidates.map((c) => ({
               cv_id: c.cv_id,
               candidate_id: c.candidate_id,
@@ -566,7 +573,6 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             })),
             jdMustHave: jd.must_have_skills || '',
             jdNiceToHave: jd.nice_to_have_skills || '',
-            jdMinYoe: jd.min_yoe || 0,
           })) {
             // Stream thinking and text tokens to client
             if (
