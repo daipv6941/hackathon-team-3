@@ -460,7 +460,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         // Try both formats: **Job Title: ...** or # Job Title
         let match = text.match(/\*\*Job Title:\s*([^\*\n]+)\*\*/i);
         if (!match) match = text.match(/^#+\s+([^\n]+)/m);
-        return match ? match[1].trim() : 'TBD';
+        return match ? match[1]!.trim() : 'TBD';
       };
 
       const parseMustHaveRequirements = (text: string): string => {
@@ -469,7 +469,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         if (!match) match = text.match(/### Must-Have Requirements?\n([\s\S]*?)(?=###|$)/i);
         if (!match) return '';
 
-        return match[1]
+        return match[1]!
           .split('\n')
           .filter((line) => line.trim().startsWith('-'))
           .map((line) => line.replace(/^-\s*/, '').trim())
@@ -483,7 +483,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         if (!match) match = text.match(/### Nice-to-Have\n([\s\S]*?)(?=###|$)/i);
         if (!match) return '';
 
-        return match[1]
+        return match[1]!
           .split('\n')
           .filter((line) => line.trim().startsWith('-'))
           .map((line) => line.replace(/^-\s*/, '').trim())
@@ -495,18 +495,18 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         // Try multiple patterns
         let match = text.match(/(?:Minimum of|requires?|at least)\s+(\d+)\s+years?/i);
         if (!match) match = text.match(/Years of Experience[:\s]*(\d+)/i);
-        return match ? parseInt(match[1], 10) : 0;
+        return match ? parseInt(match[1]!, 10) : 0;
       };
 
       const parseEnglishLevel = (text: string): string => {
         let match = text.match(/(?:English|Fluent in English)[:\s]*\(?([A-Z]\d)/i);
         if (!match) match = text.match(/English Level[:\s]*([A-Z]\d)/i);
-        return match ? match[1] : 'B2';
+        return match ? match[1]! : 'B2';
       };
 
       const parseSalaryRange = (text: string): string => {
         const match = text.match(/\*\*Salary Range:\*\*\s*([^\n+]+)/i);
-        return match ? match[1].trim() : 'Negotiable';
+        return match ? match[1]!.trim() : 'Negotiable';
       };
 
       const parseResponsibilities = (text: string): string => {
@@ -515,7 +515,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         if (!match) match = text.match(/### Responsibilities?\n([\s\S]*?)(?=###|$)/i);
         if (!match) return '';
 
-        return match[1]
+        return match[1]!
           .split('\n')
           .filter((line) => line.trim().startsWith('-'))
           .map((line) => line.replace(/^-\s*/, '').trim())
@@ -640,7 +640,15 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             englishLevelRequired: jd.english_level_required || 'B2',
             salaryRange: jd.salary_range || 'Negotiable',
             keyResponsibilities: jd.key_responsibilities || undefined,
-            candidates: activeCandidates,
+            candidates: activeCandidates.map((c) => ({
+              cv_id: c.cv_id,
+              candidate_id: c.candidate_id,
+              full_name: c.full_name,
+              cv_skills: c.cv_skills ?? undefined,
+              years_of_experience: c.years_of_experience ?? undefined,
+              english_level: c.english_level ?? undefined,
+              salary_expectation: c.salary_expectation ?? undefined,
+            })),
             jdMustHave: jd.must_have_skills || '',
             jdNiceToHave: jd.nice_to_have_skills || '',
             jdFullText: jd.jd_full_text || undefined,

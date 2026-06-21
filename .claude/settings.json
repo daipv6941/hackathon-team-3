@@ -189,7 +189,8 @@
       "Bash(curl -X POST http://localhost:3000/api/hiring/v1/candidates/seed/test-data -H 'Content-Type: application/json' -H 'Cookie: session=test' -d '{}')",
       "Bash(curl -s -H \"Content-Type: application/json\" \"http://localhost:3000/api/hiring/v1/candidates?limit=5&offset=0\")",
       "Bash(curl -s \"http://localhost:3000/api/hiring/v1/candidates?limit=5\")",
-      "Bash(curl -s \"http://localhost:3000/api/hiring/v1/candidates\")"
+      "Bash(curl -s \"http://localhost:3000/api/hiring/v1/candidates\")",
+      "Bash(pnpm turbo *)"
     ],
     "additionalDirectories": [
       "/private/tmp",
