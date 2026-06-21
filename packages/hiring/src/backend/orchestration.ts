@@ -91,6 +91,7 @@ export const ScreenCvInputSchema = z.object({
   jdMustHave: z.string(),
   jdNiceToHave: z.string(),
   jdMinYoe: z.number(),
+  jdFullText: z.string().optional(),
 });
 
 export const BatchScreenCandidatesInputSchema = z.object({
@@ -117,6 +118,7 @@ export const BatchScreenCandidatesInputSchema = z.object({
   ),
   jdMustHave: z.string(),
   jdNiceToHave: z.string(),
+  jdFullText: z.string().optional(),
 });
 
 export const GenerateReportInputSchema = z.object({
@@ -794,13 +796,19 @@ export async function screenCv(input: z.infer<typeof ScreenCvInputSchema>) {
 
   const model = openai('gpt-4-turbo');
 
-  const prompt = `You are a CV Fit Scoring Agent. Score this candidate using the official CV Fit Scoring Guide v2.
-
-APPROVED JD:
+  // Use full JD text if available, otherwise fall back to parsed fields
+  const jdContext = input.jdFullText
+    ? `APPROVED JD (FULL TEXT):
+${input.jdFullText}`
+    : `APPROVED JD (PARSED):
 - Position: ${input.jdId}
 - Must-Have Skills (50 points): ${input.jdMustHave}
 - Nice-to-Have Skills (15 points): ${input.jdNiceToHave}
-- Min YOE: ${input.jdMinYoe} years
+- Min YOE: ${input.jdMinYoe} years`;
+
+  const prompt = `You are a CV Fit Scoring Agent. Score this candidate using the official CV Fit Scoring Guide v2.
+
+${jdContext}
 
 CANDIDATE PROFILE:
 - Name: ${input.candidateName}
@@ -963,6 +971,7 @@ export async function screenManyCvs(input: z.infer<typeof BatchScreenCandidatesI
           jdMustHave: input.jdMustHave,
           jdNiceToHave: input.jdNiceToHave,
           jdMinYoe: input.minYoe,
+          jdFullText: input.jdFullText,
           candidateName: candidate.full_name,
           cvSkills: candidate.cv_skills ?? 'N/A',
           yearsOfExperience: candidate.years_of_experience ?? 0,

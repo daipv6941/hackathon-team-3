@@ -634,6 +634,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             candidates: activeCandidates,
             jdMustHave: jd.must_have_skills || '',
             jdNiceToHave: jd.nice_to_have_skills || '',
+            jdFullText: jd.jd_full_text || undefined,
           });
 
           const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
