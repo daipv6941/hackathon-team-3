@@ -7,13 +7,13 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import * as schema from '../db/index.ts';
 import {
-  batchScreenCandidatesStream,
   draftJdStream,
   extractRequestDetails,
   fetchContext,
   reviseJd,
   scoreJdStream,
   screenCv,
+  screenManyCvs,
 } from '../orchestration.ts';
 
 export interface HiringRouteDeps {
@@ -601,7 +601,30 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
 
       return stream(c, async (writer) => {
         try {
-          console.log('🎬 Starting batch screening stream...');
+          console.log('🚀 Starting parallel screening (concurrency=5)...');
+          const startTime = Date.now();
+
+          // Run screenManyCvs with concurrency control
+          const results = await screenManyCvs({
+            jdId,
+            requestId,
+            tenantId: '550e8400-e29b-41d4-a716-446655440000',
+            position: jd.position || 'Unknown Position',
+            seniorityLevel: jd.seniority_level || 'Mid-Level',
+            minYoe: jd.min_yoe || 0,
+            maxYoe: jd.max_yoe || undefined,
+            englishLevelRequired: jd.english_level_required || 'B2',
+            salaryRange: jd.salary_range || 'Negotiable',
+            keyResponsibilities: jd.key_responsibilities || undefined,
+            candidates: activeCandidates,
+            jdMustHave: jd.must_have_skills || '',
+            jdNiceToHave: jd.nice_to_have_skills || '',
+          });
+
+          const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.log(
+            `✅ Screening complete in ${elapsedSeconds}s: ${results.length} candidates evaluated`,
+          );
 
           const screeningResults: Array<{
             cvId: string;
@@ -615,149 +638,110 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             flags: string[];
             interviewQuestions: string[];
             followUpQuestions: string[];
-            rejectReason: string;
+            rejectReason: string | null;
+            confidence: string;
           }> = [];
 
-          // Stream batch screening with reasoning tokens
-          for await (const chunk of batchScreenCandidatesStream({
-            jdId,
-            requestId,
-            tenantId: '550e8400-e29b-41d4-a716-446655440000',
-            position: jd.position || 'Unknown Position',
-            seniorityLevel: jd.seniority_level || 'Mid-Level',
-            minYoe: jd.min_yoe || 0,
-            maxYoe: jd.max_yoe || undefined,
-            englishLevelRequired: jd.english_level_required || 'B2',
-            salaryRange: jd.salary_range || 'Negotiable',
-            keyResponsibilities: jd.key_responsibilities || undefined,
-            candidates: activeCandidates.map((c) => ({
-              cv_id: c.cv_id,
-              candidate_id: c.candidate_id,
-              full_name: c.full_name,
-              cv_skills: c.cv_skills || undefined,
-              years_of_experience: c.years_of_experience || undefined,
-              english_level: c.english_level || undefined,
-              salary_expectation: c.salary_expectation || undefined,
-            })),
-            jdMustHave: jd.must_have_skills || '',
-            jdNiceToHave: jd.nice_to_have_skills || '',
-          })) {
-            // Stream thinking and text tokens to client
-            if (
-              chunk.type === 'text' ||
-              chunk.type === 'thinking-start' ||
-              chunk.type === 'thinking-end'
-            ) {
-              await writer.write(`data: ${JSON.stringify(chunk)}\n\n`);
-            } else if (chunk.type === 'complete' && chunk.data) {
-              const results = (chunk.data as any).results || [];
+          // Save all screening results to database
+          for (const result of results) {
+            try {
+              const candidateData = activeCandidates.find((c) => c.cv_id === result.cvId);
+              await db.insert(schema.hiringShortlistResults).values({
+                tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+                request_id: requestId,
+                jd_id: jdId,
+                cv_id: result.cvId,
+                candidate_id: candidateData?.candidate_id || result.cvId,
+                candidate_name: result.candidateName,
+                fit_score: String(result.fitScore),
+                recommendation: String(result.recommendation),
+                confidence: result.confidence || 'Medium',
+                fit_summary: result.fitSummary as unknown as string,
+                gap_summary: result.gapSummary as unknown as string,
+                category_scores: result.categoryScores as unknown as Record<string, unknown>,
+                matched_evidence: result.matchedEvidence as unknown as Record<string, unknown>,
+                flags: result.flags as unknown as Record<string, unknown>,
+                interview_questions: result.interviewQuestions as unknown as Record<
+                  string,
+                  unknown
+                >,
+                follow_up_questions: result.followUpQuestions as unknown as Record<
+                  string,
+                  unknown
+                >,
+                reject_reason: result.rejectReason as unknown as string,
+              } as any);
 
-              // Save all screening results to database
-              for (const result of results) {
-                try {
-                  const candidateData = activeCandidates.find((c) => c.cv_id === result.cvId);
-                  await db.insert(schema.hiringShortlistResults).values({
-                    tenant_id: '550e8400-e29b-41d4-a716-446655440000',
-                    request_id: requestId,
-                    jd_id: jdId,
-                    cv_id: result.cvId,
-                    candidate_id: candidateData?.candidate_id || result.cvId,
-                    candidate_name: result.candidateName,
-                    fit_score: String(result.fitScore),
-                    recommendation: String(result.recommendation),
-                    confidence: 'High',
-                    fit_summary: result.fitSummary as unknown as string,
-                    gap_summary: result.gapSummary as unknown as string,
-                    category_scores: result.categoryScores as unknown as Record<string, unknown>,
-                    matched_evidence: result.matchedEvidence as unknown as Record<string, unknown>,
-                    flags: result.flags as unknown as Record<string, unknown>,
-                    interview_questions: result.interviewQuestions as unknown as Record<
-                      string,
-                      unknown
-                    >,
-                    follow_up_questions: result.followUpQuestions as unknown as Record<
-                      string,
-                      unknown
-                    >,
-                    reject_reason: result.rejectReason as unknown as string,
-                  } as any);
+              screeningResults.push({
+                cvId: result.cvId,
+                candidateName: result.candidateName,
+                fitScore: result.fitScore || 0,
+                recommendation: result.recommendation || 'Need More Info',
+                fitSummary: result.fitSummary || '',
+                gapSummary: result.gapSummary || '',
+                categoryScores: result.categoryScores || {},
+                matchedEvidence: result.matchedEvidence || [],
+                flags: result.flags || [],
+                interviewQuestions: result.interviewQuestions || [],
+                followUpQuestions: result.followUpQuestions || [],
+                rejectReason: result.rejectReason || null,
+                confidence: result.confidence || 'Medium',
+              });
+            } catch (saveError) {
+              console.error(`Failed to save result for ${result.candidateName}:`, saveError);
+            }
+          }
 
-                  screeningResults.push({
-                    cvId: result.cvId,
-                    candidateName: result.candidateName,
-                    fitScore: result.fitScore || 0,
-                    recommendation: result.recommendation || 'Need More Info',
-                    fitSummary: result.fitSummary || '',
-                    gapSummary: result.gapSummary || '',
-                    categoryScores: result.categoryScores || {},
-                    matchedEvidence: result.matchedEvidence || [],
-                    flags: result.flags || [],
-                    interviewQuestions: result.interviewQuestions || [],
-                    followUpQuestions: result.followUpQuestions || [],
-                    rejectReason: result.rejectReason || '',
-                  });
-                } catch (saveError) {
-                  console.error(`Failed to save result for ${result.candidateName}:`, saveError);
-                }
-              }
+          // Sort by fit score descending
+          const sorted = screeningResults.sort((a, b) => b.fitScore - a.fitScore);
 
-              // Sort by fit score descending
-              const sorted = screeningResults.sort((a, b) => b.fitScore - a.fitScore);
+          // Categorize candidates
+          const passCandidates = sorted.filter((c) => c.recommendation === 'Pass');
+          const needMoreInfoCandidates = sorted.filter(
+            (c) => c.recommendation === 'Need More Info',
+          );
+          const rejectCandidates = sorted.filter((c) => c.recommendation === 'Reject');
 
-              // Categorize candidates
-              const passCandidates = sorted.filter((c) => c.recommendation === 'Pass');
-              const needMoreInfoCandidates = sorted.filter(
-                (c) => c.recommendation === 'Need More Info',
-              );
-              const rejectCandidates = sorted.filter((c) => c.recommendation === 'Reject');
+          // Calculate percentages
+          const total = activeCandidates.length || 1;
+          const passPercentage = Math.round((passCandidates.length / total) * 100);
+          const needMoreInfoPercentage = Math.round(
+            (needMoreInfoCandidates.length / total) * 100,
+          );
+          const rejectPercentage = Math.round((rejectCandidates.length / total) * 100);
 
-              // Calculate percentages
-              const total = activeCandidates.length || 1;
-              const passPercentage = Math.round((passCandidates.length / total) * 100);
-              const needMoreInfoPercentage = Math.round(
-                (needMoreInfoCandidates.length / total) * 100,
-              );
-              const rejectPercentage = Math.round((rejectCandidates.length / total) * 100);
-
-              // Stream final report
-              const reportMessage = {
-                type: 'result',
-                content: `## 📋 Screening Report
+          // Stream final report
+          const reportMessage = {
+            type: 'result',
+            content: `## 📋 Screening Report (${elapsedSeconds}s)
 
 **Total Candidates Evaluated:** ${total}
 - ✅ Pass: ${passCandidates.length} (${passPercentage}%)
 - ⚠️ Need More Info: ${needMoreInfoCandidates.length} (${needMoreInfoPercentage}%)
 - ❌ Reject: ${rejectCandidates.length} (${rejectPercentage}%)`,
-                metadata: {
-                  reportId: `report-${Date.now()}`,
-                  requestId,
-                  jdId,
-                  position: jd.position,
-                  totalCandidates: total,
-                  statistics: {
-                    passCandidates: passCandidates.length,
-                    passPercentage,
-                    needMoreInfoCandidates: needMoreInfoCandidates.length,
-                    needMoreInfoPercentage,
-                    rejectCandidates: rejectCandidates.length,
-                    rejectPercentage,
-                  },
-                  scoredCandidates: sorted,
-                },
-              };
+            metadata: {
+              reportId: `report-${Date.now()}`,
+              requestId,
+              jdId,
+              position: jd.position,
+              totalCandidates: total,
+              statistics: {
+                passCandidates: passCandidates.length,
+                passPercentage,
+                needMoreInfoCandidates: needMoreInfoCandidates.length,
+                needMoreInfoPercentage,
+                rejectCandidates: rejectCandidates.length,
+                rejectPercentage,
+              },
+              scoredCandidates: sorted,
+            },
+          };
 
-              await writer.write(`data: ${JSON.stringify(reportMessage)}\n\n`);
-            } else if (chunk.type === 'error') {
-              console.error('Screening error:', (chunk as any).message);
-              await writer.write(
-                `data: ${JSON.stringify({ type: 'error', content: 'Screening failed' })}\n\n`,
-              );
-            }
-          }
+          await writer.write(`data: ${JSON.stringify(reportMessage)}\n\n`);
         } catch (error) {
-          console.error('Stream error:', error);
+          console.error('Screening error:', error);
           await writer.write(
-            `data: ${JSON.stringify({ type: 'error', content: 'Stream processing failed' })}\n\n`,
+            `data: ${JSON.stringify({ type: 'error', content: 'Screening failed: ' + String(error) })}\n\n`,
           );
         }
       });

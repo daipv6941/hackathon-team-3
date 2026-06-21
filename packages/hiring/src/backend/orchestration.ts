@@ -577,7 +577,7 @@ ${input.jdText}`;
   const result = await generateText({
     model,
     prompt,
-    temperature: 0.5,
+    temperature: 0,
   });
 
   try {
@@ -869,7 +869,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
   const result = await generateText({
     model,
     prompt,
-    temperature: 0.5,
+    temperature: 0,
   });
 
   try {
@@ -933,6 +933,85 @@ Return ONLY valid JSON (no markdown, no code blocks):
       fullPrompt: prompt,
     };
   }
+}
+
+/**
+ * Screen Multiple CVs in Parallel with Concurrency Control
+ * Uses 1:1 screenCv calls with concurrency limit to avoid rate limits
+ * If one CV fails, others continue (no cascade failure)
+ */
+export async function screenManyCvs(input: z.infer<typeof BatchScreenCandidatesInputSchema>) {
+  const { runWithConcurrency } = await import('./utils/concurrency.ts');
+
+  const SCREEN_CONCURRENCY = 5; // Tune based on OpenAI rate limits
+
+  console.log('📊 screenManyCvs starting:', {
+    candidateCount: input.candidates.length,
+    concurrency: SCREEN_CONCURRENCY,
+  });
+
+  const results = await runWithConcurrency(
+    input.candidates,
+    SCREEN_CONCURRENCY,
+    async (candidate) => {
+      try {
+        const screenResult = await screenCv({
+          cvId: candidate.cv_id,
+          jdId: input.jdId,
+          requestId: input.requestId,
+          tenantId: input.tenantId,
+          jdMustHave: input.jdMustHave,
+          jdNiceToHave: input.jdNiceToHave,
+          jdMinYoe: input.minYoe,
+          candidateName: candidate.full_name,
+          cvSkills: candidate.cv_skills ?? 'N/A',
+          yearsOfExperience: candidate.years_of_experience ?? 0,
+          englishLevel: candidate.english_level ?? 'B2',
+          salaryExpectation: candidate.salary_expectation ?? 'Negotiable',
+        });
+
+        return {
+          cvId: candidate.cv_id,
+          candidateName: candidate.full_name,
+          ok: true as const,
+          ...screenResult,
+        };
+      } catch (error) {
+        console.error(`❌ screenCv failed for ${candidate.cv_id}:`, error);
+        return {
+          cvId: candidate.cv_id,
+          candidateName: candidate.full_name,
+          ok: false as const,
+          fitScore: 50,
+          recommendation: 'Need More Info' as const,
+          confidence: 'Low' as const,
+          categoryScores: {
+            mustHaveSkills: 0,
+            relevantExperience: 0,
+            languageLevel: 0,
+            niceToHaveSkills: 0,
+          },
+          fitSummary: 'Screening failed - manual review required',
+          matchedEvidence: [],
+          gapSummary: 'Unable to assess',
+          flags: ['Screening error - manual review recommended'],
+          suggestedQuestions: 'Ask about relevant experience',
+          interviewQuestions: [],
+          followUpQuestions: [],
+          rejectReason: null,
+          fullPrompt: '',
+        };
+      }
+    },
+  );
+
+  console.log('✅ screenManyCvs completed:', {
+    total: results.length,
+    successful: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok).length,
+  });
+
+  return results;
 }
 
 /**
