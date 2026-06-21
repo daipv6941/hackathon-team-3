@@ -457,47 +457,62 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
 
       // Parse JD text to extract structured fields
       const parseMustHaveRequirements = (text: string): string => {
-        const match = text.match(/### Must-Have Requirements?\n([\s\S]*?)(?=###|$)/i);
+        // Try both markdown header styles
+        let match = text.match(/\*\*Requirements:\*\*([\s\S]*?)(?=\*\*|###|$)/i);
+        if (!match) match = text.match(/### Must-Have Requirements?\n([\s\S]*?)(?=###|$)/i);
         if (!match) return '';
+
         return match[1]
           .split('\n')
           .filter((line) => line.trim().startsWith('-'))
           .map((line) => line.replace(/^-\s*/, '').trim())
+          .filter((line) => line.length > 0)
           .join(', ');
       };
 
       const parseNiceToHave = (text: string): string => {
-        const match = text.match(/### Nice-to-Have\n([\s\S]*?)(?=###|$)/i);
+        // Try both markdown header styles
+        let match = text.match(/\*\*Preferred Qualifications:\*\*([\s\S]*?)(?=\*\*|###|What|$)/i);
+        if (!match) match = text.match(/### Nice-to-Have\n([\s\S]*?)(?=###|$)/i);
         if (!match) return '';
+
         return match[1]
           .split('\n')
           .filter((line) => line.trim().startsWith('-'))
           .map((line) => line.replace(/^-\s*/, '').trim())
+          .filter((line) => line.length > 0)
           .join(', ');
       };
 
       const parseYearsOfExperience = (text: string): number => {
-        const match = text.match(/Years of Experience[:\s]*(\d+)/i);
+        // Try multiple patterns
+        let match = text.match(/(?:Minimum of|requires?|at least)\s+(\d+)\s+years?/i);
+        if (!match) match = text.match(/Years of Experience[:\s]*(\d+)/i);
         return match ? parseInt(match[1], 10) : 0;
       };
 
       const parseEnglishLevel = (text: string): string => {
-        const match = text.match(/English Level[:\s]*([A-Z]\d)/i);
+        let match = text.match(/(?:English|Fluent in English)[:\s]*\(?([A-Z]\d)/i);
+        if (!match) match = text.match(/English Level[:\s]*([A-Z]\d)/i);
         return match ? match[1] : 'B2';
       };
 
       const parseSalaryRange = (text: string): string => {
-        const match = text.match(/Salary[:\s]*([^\n]+)/i);
+        const match = text.match(/\*\*Salary Range:\*\*\s*([^\n+]+)/i);
         return match ? match[1].trim() : 'Negotiable';
       };
 
       const parseResponsibilities = (text: string): string => {
-        const match = text.match(/### Responsibilities?\n([\s\S]*?)(?=###|$)/i);
+        // Try both header styles
+        let match = text.match(/\*\*Key Responsibilities:\*\*([\s\S]*?)(?=\*\*|###|$)/i);
+        if (!match) match = text.match(/### Responsibilities?\n([\s\S]*?)(?=###|$)/i);
         if (!match) return '';
+
         return match[1]
           .split('\n')
           .filter((line) => line.trim().startsWith('-'))
           .map((line) => line.replace(/^-\s*/, '').trim())
+          .filter((line) => line.length > 0)
           .slice(0, 3) // Get top 3 responsibilities
           .join('; ');
       };
