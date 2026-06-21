@@ -455,12 +455,80 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         iterations,
       });
 
+      // Parse JD text to extract structured fields
+      const parseMustHaveRequirements = (text: string): string => {
+        const match = text.match(/### Must-Have Requirements?\n([\s\S]*?)(?=###|$)/i);
+        if (!match) return '';
+        return match[1]
+          .split('\n')
+          .filter((line) => line.trim().startsWith('-'))
+          .map((line) => line.replace(/^-\s*/, '').trim())
+          .join(', ');
+      };
+
+      const parseNiceToHave = (text: string): string => {
+        const match = text.match(/### Nice-to-Have\n([\s\S]*?)(?=###|$)/i);
+        if (!match) return '';
+        return match[1]
+          .split('\n')
+          .filter((line) => line.trim().startsWith('-'))
+          .map((line) => line.replace(/^-\s*/, '').trim())
+          .join(', ');
+      };
+
+      const parseYearsOfExperience = (text: string): number => {
+        const match = text.match(/Years of Experience[:\s]*(\d+)/i);
+        return match ? parseInt(match[1], 10) : 0;
+      };
+
+      const parseEnglishLevel = (text: string): string => {
+        const match = text.match(/English Level[:\s]*([A-Z]\d)/i);
+        return match ? match[1] : 'B2';
+      };
+
+      const parseSalaryRange = (text: string): string => {
+        const match = text.match(/Salary[:\s]*([^\n]+)/i);
+        return match ? match[1].trim() : 'Negotiable';
+      };
+
+      const parseResponsibilities = (text: string): string => {
+        const match = text.match(/### Responsibilities?\n([\s\S]*?)(?=###|$)/i);
+        if (!match) return '';
+        return match[1]
+          .split('\n')
+          .filter((line) => line.trim().startsWith('-'))
+          .map((line) => line.replace(/^-\s*/, '').trim())
+          .slice(0, 3) // Get top 3 responsibilities
+          .join('; ');
+      };
+
+      const mustHaveSkills = parseMustHaveRequirements(jdText);
+      const niceToHaveSkills = parseNiceToHave(jdText);
+      const minYoe = parseYearsOfExperience(jdText);
+      const englishLevel = parseEnglishLevel(jdText);
+      const salaryRange = parseSalaryRange(jdText);
+      const keyResponsibilities = parseResponsibilities(jdText);
+
+      console.log('📋 Parsed JD data:', {
+        mustHaveSkills: mustHaveSkills.substring(0, 50) + '...',
+        niceToHaveSkills: niceToHaveSkills.substring(0, 50) + '...',
+        minYoe,
+        englishLevel,
+        salaryRange,
+      });
+
       await db.insert(schema.hiringJobs).values({
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         jd_id: jdId,
         request_id: requestId,
         position: 'TBD',
         seniority_level: 'Senior',
+        min_yoe: minYoe,
+        english_level_required: englishLevel,
+        salary_range: salaryRange,
+        must_have_skills: mustHaveSkills,
+        nice_to_have_skills: niceToHaveSkills,
+        key_responsibilities: keyResponsibilities,
         agent_jd_draft_text: jdText,
         jd_full_text: jdText,
         agent_clarity_score: String(typeof clarityScore === 'number' ? clarityScore : 0),
