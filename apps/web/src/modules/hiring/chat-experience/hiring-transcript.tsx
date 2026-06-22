@@ -66,6 +66,7 @@ export function HiringTranscript() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
+  // biome-ignore lint: dependency on state.messages is intentional for auto-scroll behavior
   useEffect(() => {
     if (scrollRef.current) {
       // Use requestAnimationFrame to ensure DOM has updated before scrolling

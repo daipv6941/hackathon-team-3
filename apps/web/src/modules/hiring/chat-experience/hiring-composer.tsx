@@ -187,7 +187,7 @@ export function HiringComposer() {
     }
   }, [state.selectedFlow]);
 
-
+  // biome-ignore lint: logging effect to debug thread initialization
   useEffect(() => {
     console.log('📋 useEffect check:', {
       threadId,
@@ -200,7 +200,7 @@ export function HiringComposer() {
     // Note: triggerInitialPhaseWorkflow is no longer needed with new phase structure
     // Extraction and workflow triggering is now handled manually via handleCreateRequestFlow
     // and via "Start Creating JD" button click handlers
-  }, [threadId, isLoadingExistingThread, state.currentPhase, extractedData, state.messages]);
+  }, [threadId, isLoadingExistingThread, state.currentPhase]);
 
   const handleCreateRequestFlow = async (userInput: string) => {
     if (extractionPhase === 'initial-prompt') {
