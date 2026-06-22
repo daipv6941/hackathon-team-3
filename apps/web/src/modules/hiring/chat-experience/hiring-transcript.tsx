@@ -3,6 +3,7 @@
 import { Button } from '@seta/shared-ui';
 import { AlertCircle, CheckCircle2, MessageCircle, Search, ThumbsUp } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { BatchScreeningCard } from './batch-screening-card';
 import { HiringRequestSelector } from './hiring-request-selector';
 import { HiringSelection } from './hiring-selection';
 import { JDScoringBreakdown } from './jd-scoring-breakdown';
@@ -444,7 +445,7 @@ ${rejectCandidates
       const reportMsg = {
         role: 'assistant' as const,
         content: reportHtml,
-        type: 'action' as const,
+        type: 'result' as const,
         metadata: result,
       };
       actions.addMessage(reportMsg);
@@ -750,29 +751,61 @@ Generated in ${scoringMetadata.iterations || 0} iteration${(scoringMetadata.iter
       )}
 
       <div className={isUser ? 'max-w-md' : 'flex-1 max-w-2xl'}>
-        <div
-          className={`rounded-lg px-4 py-3 text-sm ${
-            isUser
-              ? 'bg-primary text-white rounded-br-none'
-              : 'bg-surface-2 text-ink rounded-bl-none'
-          }`}
-        >
-          <div className="whitespace-pre-wrap">
-            {(message.metadata as Record<string, unknown> | undefined)?.requestPath ? (
-              <>
-                {message.content}
-                <a
-                  href={(message.metadata as Record<string, unknown>).requestPath as string}
-                  className="ml-2 inline-flex items-center gap-1 font-semibold text-blue-600 hover:text-blue-700 hover:underline"
-                >
-                  Click here →
-                </a>
-              </>
-            ) : (
-              (message.content as unknown as string)
-            )}
+        {/* Show batch screening results */}
+        {!isUser &&
+        message.type === 'result' &&
+        message.metadata &&
+        'scoredCandidates' in (message.metadata as Record<string, unknown>) ? (
+          <BatchScreeningCard
+            statistics={{
+              passCandidates:
+                ((message.metadata as Record<string, unknown>).statistics as any)?.passCandidates ||
+                0,
+              passPercentage:
+                ((message.metadata as Record<string, unknown>).statistics as any)?.passPercentage ||
+                0,
+              needMoreInfoCandidates:
+                ((message.metadata as Record<string, unknown>).statistics as any)
+                  ?.needMoreInfoCandidates || 0,
+              needMoreInfoPercentage:
+                ((message.metadata as Record<string, unknown>).statistics as any)
+                  ?.needMoreInfoPercentage || 0,
+              rejectCandidates:
+                ((message.metadata as Record<string, unknown>).statistics as any)
+                  ?.rejectCandidates || 0,
+              rejectPercentage:
+                ((message.metadata as Record<string, unknown>).statistics as any)
+                  ?.rejectPercentage || 0,
+            }}
+            scoredCandidates={
+              ((message.metadata as Record<string, unknown>).scoredCandidates || []) as any
+            }
+          />
+        ) : (
+          <div
+            className={`rounded-lg px-4 py-3 text-sm ${
+              isUser
+                ? 'bg-primary text-white rounded-br-none'
+                : 'bg-surface-2 text-ink rounded-bl-none'
+            }`}
+          >
+            <div className="whitespace-pre-wrap">
+              {(message.metadata as Record<string, unknown> | undefined)?.requestPath ? (
+                <>
+                  {message.content}
+                  <a
+                    href={(message.metadata as Record<string, unknown>).requestPath as string}
+                    className="ml-2 inline-flex items-center gap-1 font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+                  >
+                    Click here →
+                  </a>
+                </>
+              ) : (
+                (message.content as unknown as string)
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Show scoring breakdown for 'result' type messages with clarityScore */}
         {!isUser &&
@@ -791,227 +824,233 @@ Generated in ${scoringMetadata.iterations || 0} iteration${(scoringMetadata.iter
           />
         ) : null}
 
-        {/* Show action buttons for JD approval or other actions */}
-        {!isUser && showActions && message.type === 'action' && (
-          <>
-            {/* JD Approval buttons - show for JD drafts with requiresApproval flag */}
-            {state.currentPhase === 'jd-approval' &&
-              (message.metadata as Record<string, unknown> | undefined)?.requiresApproval && (
+        {/* Show action buttons for JD approval, shortlist confirmation, etc */}
+        {!isUser &&
+          showActions &&
+          (message.type === 'action' ||
+            (message.type === 'result' &&
+              'scoredCandidates' in (message.metadata as Record<string, unknown>))) && (
+            <>
+              {/* Shortlist confirmation buttons for batch screening results */}
+              {state.currentPhase === 'confirmation' &&
+                message.type === 'result' &&
+                'scoredCandidates' in (message.metadata as Record<string, unknown>) && (
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={async () => {
+                        try {
+                          console.log(
+                            '🔵 Confirm button clicked for request:',
+                            state.selectedRequestId,
+                          );
+
+                          actions.addMessage({
+                            role: 'user',
+                            content: '✅ Approved - finalizing shortlist',
+                            type: 'text',
+                          });
+
+                          console.log('📤 Calling /v1/shortlist/confirm...');
+                          const response = await fetch('/api/hiring/v1/shortlist/confirm', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({
+                              requestId: state.selectedRequestId,
+                              selectedCandidateIds: [],
+                            }),
+                          });
+
+                          console.log('📥 Response status:', response.status, response.statusText);
+
+                          if (!response.ok) {
+                            const errorText = await response.text();
+                            console.error('❌ API error response:', errorText);
+                            throw new Error(`Failed to confirm shortlist: ${response.statusText}`);
+                          }
+
+                          const data = await response.json();
+                          console.log('✅ Confirm response:', data);
+
+                          const requestId = state.selectedRequestId;
+                          const confirmMsg = {
+                            role: 'assistant' as const,
+                            content: `✅ **Shortlist Confirmed!**\n\nRequest status updated to **${data.requestStatus}**.\n\n📋 View hiring request: /hiring/requests/${requestId}`,
+                            type: 'action' as const,
+                            metadata: { requestId, requestPath: `/hiring/requests/${requestId}` },
+                          };
+                          actions.addMessage(confirmMsg);
+
+                          // Save confirmation message to database
+                          const threadId =
+                            state.currentThreadId || localStorage.getItem('currentThreadId');
+                          if (threadId) {
+                            const saveResponse = await fetch('/api/hiring/v1/messages', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              credentials: 'include',
+                              body: JSON.stringify({ threadId, ...confirmMsg }),
+                            });
+                            if (!saveResponse.ok) {
+                              console.error(
+                                '❌ Failed to save confirm message:',
+                                await saveResponse.text(),
+                              );
+                            } else {
+                              console.log('✅ Confirm message saved');
+                            }
+
+                            // Update thread phase to complete
+                            const phaseResponse = await fetch(
+                              `/api/hiring/v1/threads/${threadId}`,
+                              {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({
+                                  current_phase: 'complete',
+                                }),
+                              },
+                            );
+                            if (!phaseResponse.ok) {
+                              console.error(
+                                '❌ Failed to update thread phase:',
+                                await phaseResponse.text(),
+                              );
+                            } else {
+                              console.log('✅ Thread phase updated to complete');
+                            }
+                          }
+                        } catch (error) {
+                          console.error('Confirm shortlist error:', error);
+                          actions.addMessage({
+                            role: 'assistant',
+                            content: `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                            type: 'text',
+                          });
+                        }
+                      }}
+                      className="gap-1"
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      Confirm Shortlist
+                    </Button>
+                  </div>
+                )}
+
+              {/* JD Approval buttons - show for JD drafts with requiresApproval flag */}
+              {state.currentPhase === 'jd-approval' &&
+                message.type === 'action' &&
+                (message.metadata as Record<string, unknown> | undefined)?.requiresApproval && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button size="sm" variant="default" onClick={handleApprove} className="gap-1">
+                      <ThumbsUp className="h-3 w-3" />
+                      Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        actions.addMessage({
+                          role: 'assistant',
+                          content: 'Please share your feedback to improve this JD:',
+                          type: 'action',
+                          metadata: { showFeedbackInput: true, jdContent: message.content },
+                        });
+                        setShowActions(false);
+                      }}
+                      className="gap-1"
+                    >
+                      💬 Feedback
+                    </Button>
+                  </div>
+                )}
+
+              {/* Hiring request summary confirmation */}
+              {state.selectedRequestId === 'creating' &&
+                message.content.includes('HIRING_REQUEST_SUMMARY') && (
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={handleConfirmHiringRequest}
+                      disabled={state.isLoading}
+                      className="gap-1"
+                    >
+                      <CheckCircle2 className="h-3 w-3" />
+                      Confirm
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={handleChangeHiringRequest}
+                      disabled={state.isLoading}
+                      className="gap-1"
+                    >
+                      Change Details
+                    </Button>
+                  </div>
+                )}
+
+              {/* Shortlist action - show after JD approved */}
+              {state.currentPhase === 'jd-approval' &&
+                message.content.includes('JD Approved & Saved') && (
+                  <div className="mt-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="default"
+                      onClick={handleScreenAndShortlist}
+                      disabled={state.isLoading}
+                      className="gap-1"
+                    >
+                      <Search className="h-3 w-3" />
+                      {state.isLoading ? 'Screening...' : 'Screen & Shortlist Candidates'}
+                    </Button>
+                  </div>
+                )}
+
+              {/* Start JD creation */}
+              {(message.metadata as Record<string, unknown> | undefined)?.startJdCreation && (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button size="sm" variant="default" onClick={handleApprove} className="gap-1">
-                    <ThumbsUp className="h-3 w-3" />
-                    Approve
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => {
+                      actions.addMessage({
+                        role: 'user',
+                        content: 'Yes, start creating the job description',
+                        type: 'text',
+                      });
+                      setShowActions(false);
+                      handleStartJobDescription();
+                    }}
+                    className="gap-1"
+                  >
+                    <CheckCircle2 className="h-3 w-3" />
+                    Yes, Start Creating JD
                   </Button>
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={() => {
                       actions.addMessage({
-                        role: 'assistant',
-                        content: 'Please share your feedback to improve this JD:',
-                        type: 'action',
-                        metadata: { showFeedbackInput: true, jdContent: message.content },
+                        role: 'user',
+                        content: 'No, skip for now',
+                        type: 'text',
                       });
                       setShowActions(false);
                     }}
                     className="gap-1"
                   >
-                    💬 Feedback
+                    Skip For Now
                   </Button>
                 </div>
               )}
-
-            {/* Hiring request summary confirmation */}
-            {state.selectedRequestId === 'creating' &&
-              message.content.includes('HIRING_REQUEST_SUMMARY') && (
-                <div className="mt-3 flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={handleConfirmHiringRequest}
-                    disabled={state.isLoading}
-                    className="gap-1"
-                  >
-                    <CheckCircle2 className="h-3 w-3" />
-                    Confirm
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={handleChangeHiringRequest}
-                    disabled={state.isLoading}
-                    className="gap-1"
-                  >
-                    Change Details
-                  </Button>
-                </div>
-              )}
-
-            {/* Shortlist action - show after JD approved */}
-            {state.currentPhase === 'jd-approval' &&
-              message.content.includes('JD Approved & Saved') && (
-                <div className="mt-3">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="default"
-                    onClick={handleScreenAndShortlist}
-                    disabled={state.isLoading}
-                    className="gap-1"
-                  >
-                    <Search className="h-3 w-3" />
-                    {state.isLoading ? 'Screening...' : 'Screen & Shortlist Candidates'}
-                  </Button>
-                </div>
-              )}
-
-            {/* Shortlist confirmation buttons */}
-            {state.currentPhase === 'confirmation' &&
-              message.content.includes('Shortlist Report') && (
-                <div className="mt-3 flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={async () => {
-                      try {
-                        console.log(
-                          '🔵 Confirm button clicked for request:',
-                          state.selectedRequestId,
-                        );
-
-                        actions.addMessage({
-                          role: 'user',
-                          content: '✅ Approved - finalizing shortlist',
-                          type: 'text',
-                        });
-
-                        console.log('📤 Calling /v1/shortlist/confirm...');
-                        const response = await fetch('/api/hiring/v1/shortlist/confirm', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          credentials: 'include',
-                          body: JSON.stringify({
-                            requestId: state.selectedRequestId,
-                            selectedCandidateIds: [],
-                          }),
-                        });
-
-                        console.log('📥 Response status:', response.status, response.statusText);
-
-                        if (!response.ok) {
-                          const errorText = await response.text();
-                          console.error('❌ API error response:', errorText);
-                          throw new Error(`Failed to confirm shortlist: ${response.statusText}`);
-                        }
-
-                        const data = await response.json();
-                        console.log('✅ Confirm response:', data);
-
-                        const requestId = state.selectedRequestId;
-                        const confirmMsg = {
-                          role: 'assistant' as const,
-                          content: `✅ **Shortlist Confirmed!**\n\nRequest status updated to **${data.requestStatus}**.\n\n📋 View hiring request: /hiring/requests/${requestId}`,
-                          type: 'action' as const,
-                          metadata: { requestId, requestPath: `/hiring/requests/${requestId}` },
-                        };
-                        actions.addMessage(confirmMsg);
-
-                        // Save confirmation message to database
-                        const threadId =
-                          state.currentThreadId || localStorage.getItem('currentThreadId');
-                        if (threadId) {
-                          const saveResponse = await fetch('/api/hiring/v1/messages', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            credentials: 'include',
-                            body: JSON.stringify({ threadId, ...confirmMsg }),
-                          });
-                          if (!saveResponse.ok) {
-                            console.error(
-                              '❌ Failed to save confirm message:',
-                              await saveResponse.text(),
-                            );
-                          } else {
-                            console.log('✅ Confirm message saved');
-                          }
-
-                          // Update thread phase to complete
-                          const phaseResponse = await fetch(`/api/hiring/v1/threads/${threadId}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            credentials: 'include',
-                            body: JSON.stringify({
-                              current_phase: 'complete',
-                            }),
-                          });
-                          if (!phaseResponse.ok) {
-                            console.error(
-                              '❌ Failed to update thread phase:',
-                              await phaseResponse.text(),
-                            );
-                          } else {
-                            console.log('✅ Thread phase updated to complete');
-                          }
-                        }
-
-                        actions.setPhase('complete');
-                        setShowActions(false);
-                      } catch (error) {
-                        console.error('Confirm error:', error);
-                        actions.addMessage({
-                          role: 'assistant',
-                          content: `❌ Failed to confirm: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                          type: 'text',
-                        });
-                      }
-                    }}
-                    className="gap-1"
-                  >
-                    <ThumbsUp className="h-3 w-3" />
-                    Confirm Shortlist
-                  </Button>
-                </div>
-              )}
-
-            {/* Start JD creation */}
-            {(message.metadata as Record<string, unknown> | undefined)?.startJdCreation && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={() => {
-                    actions.addMessage({
-                      role: 'user',
-                      content: 'Yes, start creating the job description',
-                      type: 'text',
-                    });
-                    setShowActions(false);
-                    handleStartJobDescription();
-                  }}
-                  className="gap-1"
-                >
-                  <CheckCircle2 className="h-3 w-3" />
-                  Yes, Start Creating JD
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    actions.addMessage({
-                      role: 'user',
-                      content: 'No, skip for now',
-                      type: 'text',
-                    });
-                    setShowActions(false);
-                  }}
-                  className="gap-1"
-                >
-                  Skip For Now
-                </Button>
-              </div>
-            )}
-          </>
-        )}
+            </>
+          )}
 
         {/* Feedback input for JD revision */}
         {showFeedbackInput && !isUser && (
