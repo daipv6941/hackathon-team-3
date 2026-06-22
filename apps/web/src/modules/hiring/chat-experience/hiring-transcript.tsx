@@ -66,6 +66,7 @@ export function HiringTranscript() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
+  // biome-ignore lint: dependency on state.messages is intentional for auto-scroll behavior
   useEffect(() => {
     if (scrollRef.current) {
       // Use requestAnimationFrame to ensure DOM has updated before scrolling
@@ -794,7 +795,7 @@ Generated in ${scoringMetadata.iterations || 0} iteration${(scoringMetadata.iter
         {!isUser && showActions && message.type === 'action' && (
           <>
             {/* JD Approval buttons - show for JD drafts with requiresApproval flag */}
-            {(state.currentPhase === 'initial' || state.currentPhase === 'jd-approval') &&
+            {state.currentPhase === 'jd-approval' &&
               (message.metadata as Record<string, unknown> | undefined)?.requiresApproval && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button size="sm" variant="default" onClick={handleApprove} className="gap-1">

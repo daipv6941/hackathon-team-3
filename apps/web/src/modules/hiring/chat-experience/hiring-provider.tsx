@@ -17,7 +17,6 @@ export function HiringProvider({ children }: { children: React.ReactNode }) {
   });
 
   // Restore state from localStorage on mount
-  // biome-ignore lint/correctness/useSetStateIneffect: Intentional one-time state restoration from localStorage
   useEffect(() => {
     const savedSelectedRequestId = localStorage.getItem('selectedRequestId');
     const savedSelectedFlow = localStorage.getItem('selectedFlow');

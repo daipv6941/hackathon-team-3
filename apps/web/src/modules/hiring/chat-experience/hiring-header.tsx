@@ -20,8 +20,11 @@ export function HiringHeader({ onOpenMobileNav }: HiringHeaderProps) {
         <div>
           <div className="text-sm font-medium">
             {state.currentPhase === 'selection' && 'Select Your Workflow'}
-            {state.currentPhase === 'initial' && 'Start Hiring'}
-            {state.currentPhase === 'jd-creation' && 'Creating Job Description'}
+            {state.currentPhase === 'request-selection' && 'Select Request'}
+            {state.currentPhase === 'hiring-request-creation' && 'Create Hiring Request'}
+            {state.currentPhase === 'hiring-request-extracted' && 'Confirm Request Details'}
+            {state.currentPhase === 'request-selected' && 'Request Selected'}
+            {state.currentPhase === 'jd-generation' && 'Creating Job Description'}
             {state.currentPhase === 'jd-approval' && 'Review & Approve JD'}
             {state.currentPhase === 'cv-screening' && 'Screening Candidates'}
             {state.currentPhase === 'confirmation' && 'Confirm Shortlist'}

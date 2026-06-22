@@ -3,6 +3,7 @@
 import { Button, Input } from '@seta/shared-ui';
 import { Send } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { HiringChatState } from './hiring-context';
 import { useHiringChat } from './use-hiring-chat';
 
 export function HiringComposer() {
@@ -11,7 +12,6 @@ export function HiringComposer() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [isLoadingExistingThread, setIsLoadingExistingThread] = useState(false);
   const triggeredThreadsRef = useRef<Set<string>>(new Set());
-  const prevPhaseRef = useRef<string | null>(null);
   const loadedFlowRef = useRef<string | null>(null);
   const prevThreadIdRef = useRef<string | null>(null);
   const [extractionPhase, setExtractionPhase] = useState<
@@ -187,20 +187,7 @@ export function HiringComposer() {
     }
   }, [state.selectedFlow]);
 
-  useEffect(() => {
-    if (
-      state.selectedRequestId &&
-      state.selectedRequestId !== 'creating' &&
-      state.currentPhase !== 'initial' &&
-      prevPhaseRef.current === 'initial'
-    ) {
-      console.log('🔄 Request changed, resetting thread:', state.selectedRequestId);
-      setThreadId(null);
-      setIsLoadingExistingThread(false);
-    }
-    prevPhaseRef.current = state.currentPhase;
-  }, [state.selectedRequestId, state.currentPhase]);
-
+  // biome-ignore lint: logging effect to debug thread initialization
   useEffect(() => {
     console.log('📋 useEffect check:', {
       threadId,
@@ -213,7 +200,7 @@ export function HiringComposer() {
     // Note: triggerInitialPhaseWorkflow is no longer needed with new phase structure
     // Extraction and workflow triggering is now handled manually via handleCreateRequestFlow
     // and via "Start Creating JD" button click handlers
-  }, [threadId, isLoadingExistingThread, state.currentPhase, extractedData, state.messages]);
+  }, [threadId, isLoadingExistingThread, state.currentPhase]);
 
   const handleCreateRequestFlow = async (userInput: string) => {
     if (extractionPhase === 'initial-prompt') {
@@ -552,25 +539,13 @@ ${String(data.business_justification) || 'TBD'}
         });
       }
 
-      const phaseSequence = [
-        'initial',
-        'jd-creation',
-        'jd-approval',
-        'cv-screening',
-        'confirmation',
-        'complete',
-      ];
-      const currentIndex = phaseSequence.indexOf(state.currentPhase);
-      if (currentIndex < phaseSequence.length - 1) {
-        actions.setPhase(
-          phaseSequence[currentIndex + 1] as
-            | 'initial'
-            | 'jd-creation'
-            | 'jd-approval'
-            | 'cv-screening'
-            | 'confirmation'
-            | 'complete',
-        );
+      const phaseSequence = ['jd-approval', 'cv-screening', 'confirmation', 'complete'] as const;
+      const currentIndex = phaseSequence.indexOf(
+        state.currentPhase as (typeof phaseSequence)[number],
+      );
+      const nextPhase = currentIndex >= 0 ? phaseSequence[currentIndex + 1] : undefined;
+      if (nextPhase) {
+        actions.setPhase(nextPhase as HiringChatState['currentPhase']);
       }
     } catch (error) {
       console.error('Chat error:', error);
