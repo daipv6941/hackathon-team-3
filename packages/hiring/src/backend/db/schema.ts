@@ -19,16 +19,23 @@ export const hiringRequests = hiringSchema.table('requests', {
   request_id: varchar('request_id', { length: 50 }).notNull().unique(), // REQ-001, REQ-002, etc
   position_title: varchar('position_title', { length: 255 }).notNull(),
   team_name: varchar('team_name', { length: 100 }),
+  team_description: text('team_description'), // Description of team, what they do, company context
   seniority_level: varchar('seniority_level', { length: 20 }), // Intern, Junior, Mid, Senior, Manager, C-level
   urgency_level: varchar('urgency_level', { length: 20 }).notNull(), // Low, Medium, High, Critical
   headcount_requested: integer('headcount_requested').notNull().default(1),
   business_justification: text('business_justification'),
   team_skill_gap_summary: text('team_skill_gap_summary'),
   key_deliverables: text('key_deliverables'),
+  responsibilities: jsonb('responsibilities'), // Array of individual responsibilities
   salary_range: varchar('salary_range', { length: 50 }), // e.g., "12M-18M VND/month"
   work_mode: varchar('work_mode', { length: 20 }), // Remote, Hybrid, On-site
   min_yoe: integer('min_yoe'), // Minimum years of experience
+  max_yoe: integer('max_yoe'), // Maximum years of experience (optional)
   english_level_required: varchar('english_level_required', { length: 5 }), // A1-C2
+  preferred_tech_stack: jsonb('preferred_tech_stack'), // Array of preferred technologies/frameworks
+  required_skills: jsonb('required_skills'), // Array of required skills
+  nice_to_have_skills: jsonb('nice_to_have_skills'), // Array of nice-to-have skills
+  onboarding_timeline: varchar('onboarding_timeline', { length: 100 }), // e.g., "4-6 weeks", "ASAP"
   requesting_manager: varchar('requesting_manager', { length: 255 }),
   hr_owner: uuid('hr_owner').notNull(), // Identity.user_id of TA
   approval_status: varchar('approval_status', { length: 20 }).notNull().default('Pending'), // Pending, Approved, Rejected

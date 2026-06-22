@@ -1176,6 +1176,14 @@ export interface ExtractedRequestDetails {
   key_deliverables?: string;
   salary_range?: string;
   seniority_level?: string;
+  min_yoe?: number;
+  max_yoe?: number;
+  team_description?: string;
+  preferred_tech_stack?: string[];
+  required_skills?: string[];
+  nice_to_have_skills?: string[];
+  onboarding_timeline?: string;
+  responsibilities?: string[];
   missing_fields: string[];
   fullPrompt: string;
 }
@@ -1187,39 +1195,39 @@ export async function extractRequestDetails(
 
   const model = openai('gpt-4-turbo');
 
-  const prompt = `You are an expert HR recruiter. Extract hiring request information from the following description.
-CRITICAL: Use ONLY the specified enum values. No paraphrasing.
+  const prompt = `You are an expert HR recruiter. Extract hiring request information from the following description and return ONLY valid JSON.
 
 USER DESCRIPTION:
 ${input.description}
 
-Extract the following information if present. Return a JSON object with these fields (use null for missing fields):
+Extract these fields and return a valid JSON object. Use null for any missing fields:
+
 {
-  "position_title": "The job position/title",
-  "team_name": "The team or department",
-  "urgency_level": "MUST be one of: Low, Medium, High, Critical (default: Medium)",
-  "headcount_requested": "Number of positions (integer, default: 1)",
-  "business_justification": "Why this hire is needed; business context",
-  "team_skill_gap_summary": "Specific skills the team is missing",
-  "key_deliverables": "Key responsibilities and concrete deliverables",
-  "salary_range": "Expected salary range (e.g., '12M-18M VND/month')",
-  "seniority_level": "MUST be one of: Intern, Junior, Mid, Senior, Manager, C-level"
+  "position_title": "job title",
+  "team_name": "team or department name",
+  "team_description": "what the team does",
+  "seniority_level": "one of: Intern, Junior, Mid, Senior, Manager, C-level",
+  "min_yoe": "minimum years experience as integer (e.g. 3 for '3+ years')",
+  "max_yoe": "maximum years experience as integer or null",
+  "urgency_level": "one of: Low, Medium, High, Critical",
+  "headcount_requested": "number of positions needed",
+  "salary_range": "salary range string",
+  "onboarding_timeline": "timeline string like '4-6 weeks' or 'ASAP'",
+  "business_justification": "why this hire is needed",
+  "team_skill_gap_summary": "skills the team lacks",
+  "key_deliverables": "main responsibilities as string",
+  "responsibilities": ["list", "of", "individual", "responsibilities"],
+  "preferred_tech_stack": ["PHP", "React", "MySQL"],
+  "required_skills": ["must-have", "skills"],
+  "nice_to_have_skills": ["nice-to-have", "skills"]
 }
 
-ENUM MAPPING RULES (if source uses different wording, map to enum above):
-- "Critical/Urgent/ASAP/Immediate" → Critical
-- "High priority/Immediate need" → High
-- "Standard/Regular" → Medium
-- "Low priority/Can wait" → Low
+ENUM VALUES ONLY:
+- Seniority: Intern, Junior, Mid, Senior, Manager, C-level
+- Urgency: Low, Medium, High, Critical
+- YOE: convert "3-5 years" to min_yoe: 3, max_yoe: 5; "5+ years" to min_yoe: 5, max_yoe: null
 
-- "Entry/Fresh/New grad" → Intern
-- "1-2 years/Entry-level" → Junior
-- "2-4 years/Mid-level/Intermediate" → Mid
-- "4+ years/Expert/Lead" → Senior
-- "Team lead/Head of/Manager" → Manager
-- "VP/C-level/Executive/CTO/CEO" → C-level
-
-Return ONLY the JSON object, no other text.`;
+Return ONLY valid JSON, no markdown, no extra text.`;
 
   console.log('📋 extractRequestDetails finalPrompt:', prompt);
 
@@ -1229,22 +1237,42 @@ Return ONLY the JSON object, no other text.`;
     temperature: 0.3,
   });
 
+  console.log('📝 LLM raw response:', result.text);
+
   let extracted: Partial<ExtractedRequestDetails> = {};
   try {
     const parsed = JSON.parse(result.text);
     extracted = {
       position_title: parsed.position_title || undefined,
       team_name: parsed.team_name || undefined,
+      team_description: parsed.team_description || undefined,
       urgency_level: parsed.urgency_level || undefined,
       headcount_requested: parsed.headcount_requested || undefined,
       business_justification: parsed.business_justification || undefined,
       team_skill_gap_summary: parsed.team_skill_gap_summary || undefined,
       key_deliverables: parsed.key_deliverables || undefined,
+      responsibilities: Array.isArray(parsed.responsibilities)
+        ? parsed.responsibilities.filter((r: unknown): r is string => typeof r === 'string')
+        : undefined,
       salary_range: parsed.salary_range || undefined,
       seniority_level: parsed.seniority_level || undefined,
+      min_yoe: parsed.min_yoe ? parseInt(String(parsed.min_yoe), 10) : undefined,
+      max_yoe: parsed.max_yoe ? parseInt(String(parsed.max_yoe), 10) : undefined,
+      preferred_tech_stack: Array.isArray(parsed.preferred_tech_stack)
+        ? parsed.preferred_tech_stack.filter((t: unknown): t is string => typeof t === 'string')
+        : undefined,
+      required_skills: Array.isArray(parsed.required_skills)
+        ? parsed.required_skills.filter((s: unknown): s is string => typeof s === 'string')
+        : undefined,
+      nice_to_have_skills: Array.isArray(parsed.nice_to_have_skills)
+        ? parsed.nice_to_have_skills.filter((s: unknown): s is string => typeof s === 'string')
+        : undefined,
+      onboarding_timeline: parsed.onboarding_timeline || undefined,
     };
+    console.log('✅ Extracted details:', extracted);
   } catch (e) {
-    console.error('Failed to parse LLM response:', e);
+    console.error('❌ Failed to parse LLM response:', e);
+    console.error('Response text was:', result.text);
   }
 
   // Identify missing required fields

@@ -505,8 +505,10 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       };
 
       const parseSalaryRange = (text: string): string => {
-        const match = text.match(/\*\*Salary Range:\*\*\s*([^\n+]+)/i);
-        return match ? match[1]!.trim() : 'Negotiable';
+        const match = text.match(/\*\*Salary Range:\*\*\s*([^\n]+)/i);
+        if (!match) return 'Negotiable';
+        const range = match[1]!.trim();
+        return range.length > 50 ? range.substring(0, 47) + '...' : range;
       };
 
       const parseResponsibilities = (text: string): string => {
@@ -820,8 +822,9 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
 
       return c.json({ extracted });
     } catch (error) {
-      console.error('Extract error:', error);
-      return c.json({ error: 'Failed to extract details' }, 500);
+      console.error('❌ Extract error:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      return c.json({ error: `Failed to extract details: ${String(error)}` }, 500);
     }
   });
 
@@ -845,15 +848,29 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
           request_id: requestId,
           position_title: body.position_title || 'TBD',
           team_name: body.team_name,
+          team_description: body.team_description,
+          seniority_level: body.seniority_level,
           urgency_level: body.urgency_level || 'Medium',
           headcount_requested: parseInt(body.headcount_requested, 10) || 1,
           business_justification: body.business_justification,
           team_skill_gap_summary: body.team_skill_gap_summary,
           key_deliverables: body.key_deliverables,
+          responsibilities: Array.isArray(body.responsibilities)
+            ? body.responsibilities
+            : undefined,
           salary_range: body.salary_range,
           work_mode: body.work_mode,
-          min_yoe: body.min_yoe ? parseInt(body.min_yoe, 10) : undefined,
+          min_yoe: body.min_yoe ? parseInt(String(body.min_yoe), 10) : undefined,
+          max_yoe: body.max_yoe ? parseInt(String(body.max_yoe), 10) : undefined,
           english_level_required: body.english_level_required,
+          preferred_tech_stack: Array.isArray(body.preferred_tech_stack)
+            ? body.preferred_tech_stack
+            : undefined,
+          required_skills: Array.isArray(body.required_skills) ? body.required_skills : undefined,
+          nice_to_have_skills: Array.isArray(body.nice_to_have_skills)
+            ? body.nice_to_have_skills
+            : undefined,
+          onboarding_timeline: body.onboarding_timeline,
           hr_owner: session.user_id,
           request_status: 'New',
         })
@@ -898,6 +915,165 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
     } catch (error) {
       console.error('❌ Revise JD error:', error);
       return c.json({ error: 'Failed to revise JD' }, 500);
+    }
+  });
+
+  app.post('/v1/jd/generate', async (c) => {
+    try {
+      const { requestId, threadId } = await c.req.json();
+
+      if (!requestId) {
+        return c.json({ error: 'requestId required' }, 400);
+      }
+
+      const session = c.get('session') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
+
+      const db = getDb();
+
+      const request = await db.query.hiringRequests.findFirst({
+        where: eq(schema.hiringRequests.request_id, requestId),
+      });
+
+      if (!request) {
+        return c.json({ error: 'Hiring request not found' }, 404);
+      }
+
+      const context = await fetchContext({ requestId, tenantId: session.tenant_id }, db);
+      const jdId = `JD-${requestId.replace('REQ-', '')}-${Date.now().toString().slice(-6)}`;
+
+      console.log('🎬 Starting JD generation for request:', requestId);
+
+      return stream(c, async (writer) => {
+        try {
+          let currentJdText = '';
+          let draftPrompt = '';
+
+          console.log('📝 Streaming draft JD...');
+          for await (const chunk of draftJdStream({
+            ...(context as any),
+            jdId,
+            requestId,
+            tenantId: session.tenant_id,
+          })) {
+            if (
+              chunk.type === 'text' ||
+              chunk.type === 'thinking-start' ||
+              chunk.type === 'thinking-end'
+            ) {
+              await writer.write(`data: ${JSON.stringify(chunk)}\n\n`);
+            } else if (chunk.type === 'complete' && chunk.data) {
+              currentJdText = (chunk.data as any).draftText;
+              draftPrompt = (chunk.data as any).fullPrompt;
+            }
+          }
+
+          console.log('✅ Draft JD complete');
+
+          // Auto-scoring loop: score until >= 80 or max 3 iterations
+          let scoreResult: any = null;
+          let iteration = 1;
+          const maxIterations = 3;
+
+          while (!scoreResult || (scoreResult.clarityScore < 80 && iteration < maxIterations)) {
+            console.log(`📊 Iteration ${iteration}: Scoring...`);
+
+            // Stream scoring with reasoning
+            for await (const chunk of scoreJdStream({
+              jdId,
+              tenantId: session.tenant_id,
+              jdText: currentJdText,
+            })) {
+              if (
+                chunk.type === 'text' ||
+                chunk.type === 'thinking-start' ||
+                chunk.type === 'thinking-end'
+              ) {
+                // Stream thinking tokens to client
+                await writer.write(`data: ${JSON.stringify(chunk)}\n\n`);
+              } else if (chunk.type === 'complete' && chunk.data) {
+                scoreResult = chunk.data as any;
+              } else if (chunk.type === 'error') {
+                console.error('Scoring error:', (chunk as any).message);
+                scoreResult = {
+                  clarityScore: 0,
+                  status: 'Error',
+                  categoryScores: {},
+                  flaggedGaps: ['Scoring failed'],
+                  requiredRevisions: [],
+                  confidence: 'Low',
+                };
+              }
+            }
+
+            if (scoreResult.clarityScore < 80 && iteration < maxIterations) {
+              console.log(
+                `📊 Iteration ${iteration}: Score ${scoreResult.clarityScore}/100, revising...`,
+              );
+
+              const revised = await reviseJd({
+                jdId,
+                tenantId: session.tenant_id,
+                currentDraft: currentJdText,
+                flaggedGaps: scoreResult.flaggedGaps || [],
+              });
+
+              currentJdText = revised.revisedText;
+              iteration++;
+            } else {
+              break;
+            }
+          }
+
+          console.log(
+            `✅ Final Score: ${scoreResult.clarityScore}/100 after ${iteration - 1} iteration(s)`,
+          );
+
+          // Prepare final messages
+          const jdMessage = {
+            type: 'action',
+            content: currentJdText,
+            metadata: {
+              draftJdPrompt: draftPrompt,
+            },
+          };
+
+          const scoringContent = `## 📊 Quality Assessment
+
+**Clarity Score: ${scoreResult.clarityScore}/100** — ${scoreResult.status}
+
+Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scoreResult.confidence} confidence)`;
+
+          const scoringMessage = {
+            type: 'result',
+            content: scoringContent,
+            metadata: {
+              clarityScore: scoreResult.clarityScore,
+              status: scoreResult.status,
+              categoryScores: scoreResult.categoryScores,
+              flaggedGaps: scoreResult.flaggedGaps,
+              requiredRevisions: scoreResult.requiredRevisions,
+              confidence: scoreResult.confidence,
+              iterations: iteration - 1,
+            },
+          };
+
+          // Stream final messages
+          console.log('📤 Streaming final messages...');
+          await writer.write(`data: ${JSON.stringify(jdMessage)}\n\n`);
+          await writer.write(`data: ${JSON.stringify(scoringMessage)}\n\n`);
+        } catch (error) {
+          console.error('Stream error:', error);
+          await writer.write(
+            `data: ${JSON.stringify({ type: 'error', content: 'Stream processing failed' })}\n\n`,
+          );
+        }
+      });
+    } catch (error) {
+      console.error('❌ Generate JD error:', error);
+      return c.json({ error: 'Failed to generate JD' }, 500);
     }
   });
 

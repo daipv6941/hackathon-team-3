@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   type HiringChatState,
   HiringContext,
@@ -15,6 +15,35 @@ export function HiringProvider({ children }: { children: React.ReactNode }) {
     currentPhase: 'selection',
     historyLoading: false,
   });
+
+  // Restore state from localStorage on mount
+  // biome-ignore lint/correctness/useSetStateIneffect: Intentional one-time state restoration from localStorage
+  useEffect(() => {
+    const savedSelectedRequestId = localStorage.getItem('selectedRequestId');
+    const savedSelectedFlow = localStorage.getItem('selectedFlow');
+    const savedSelectedJobId = localStorage.getItem('selectedJobId');
+
+    if (savedSelectedRequestId || savedSelectedFlow || savedSelectedJobId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setState((prev) => {
+        const stateUpdate: Partial<HiringChatState> = {};
+
+        if (savedSelectedRequestId) {
+          stateUpdate.selectedRequestId = savedSelectedRequestId;
+        }
+
+        if (savedSelectedFlow) {
+          stateUpdate.selectedFlow = savedSelectedFlow as 'jd-draft' | 'cv-shortlist';
+        }
+
+        if (savedSelectedJobId) {
+          stateUpdate.selectedJobId = savedSelectedJobId;
+        }
+
+        return { ...prev, ...stateUpdate };
+      });
+    }
+  }, []);
 
   const addMessage = useCallback((message: Omit<HiringMessage, 'id' | 'timestamp'>) => {
     const newMessage: HiringMessage = {
@@ -52,7 +81,7 @@ export function HiringProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({
       ...prev,
       selectedFlow: flow,
-      currentPhase: 'initial',
+      currentPhase: 'request-selection',
     }));
   }, []);
 
@@ -64,6 +93,10 @@ export function HiringProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, selectedJobId: jobId }));
   }, []);
 
+  const setCurrentThread = useCallback((threadId: string | undefined) => {
+    setState((prev) => ({ ...prev, currentThreadId: threadId }));
+  }, []);
+
   const clearMessages = useCallback(() => {
     setState((prev) => ({
       ...prev,
@@ -72,6 +105,7 @@ export function HiringProvider({ children }: { children: React.ReactNode }) {
       selectedFlow: undefined,
       selectedRequestId: undefined,
       selectedJobId: undefined,
+      currentThreadId: undefined,
     }));
   }, []);
 
@@ -85,6 +119,7 @@ export function HiringProvider({ children }: { children: React.ReactNode }) {
       setSelectedFlow,
       setSelectedRequest,
       setSelectedJob,
+      setCurrentThread,
       clearMessages,
     },
   };

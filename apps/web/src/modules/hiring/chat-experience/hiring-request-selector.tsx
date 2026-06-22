@@ -63,6 +63,8 @@ export function HiringRequestSelector() {
     const threadId = localStorage.getItem('currentThreadId');
 
     actions.setSelectedRequest(request.requestId);
+    // Persist selectedRequestId to localStorage for recovery on page reload
+    localStorage.setItem('selectedRequestId', request.requestId);
 
     const userMessage = {
       role: 'user' as const,
@@ -101,12 +103,13 @@ export function HiringRequestSelector() {
         }).catch((e) => console.error('Failed to save assistant message:', e));
       }
 
-      actions.setPhase('jd-approval');
+      actions.setPhase('request-selected');
     } else {
       const assistantMsg = {
         role: 'assistant' as const,
-        content: `✅ Great! I'll work with **${request.requestId}**: ${request.positionTitle}\n\nTeam: ${request.teamName}\n\nGenerating job description...`,
+        content: `✅ Great! I've selected **${request.requestId}**: ${request.positionTitle}\n\nTeam: ${request.teamName}\n\nWould you like me to start creating the job description now?`,
         type: 'action' as const,
+        metadata: { startJdCreation: true },
       };
       actions.addMessage(assistantMsg);
 
@@ -119,12 +122,12 @@ export function HiringRequestSelector() {
         }).catch((e) => console.error('Failed to save assistant message:', e));
       }
 
-      actions.setPhase('initial');
+      actions.setPhase('request-selected');
     }
 
     // Update thread title, request info, and phase
     if (threadId) {
-      const nextPhase = selectedFlow === 'cv-shortlist' ? 'jd-approval' : 'initial';
+      const nextPhase = 'request-selected';
       await fetch(`/api/hiring/v1/threads/${threadId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -187,6 +190,21 @@ ${jdContent}`,
             body: JSON.stringify({ threadId, ...jdMsg }),
           }).catch((e) => console.error('Failed to save JD message:', e));
         }
+
+        // For cv-shortlist flow, set phase to jd-approval (ready for screening)
+        actions.setPhase('jd-approval');
+
+        // Update thread phase
+        if (threadId) {
+          await fetch(`/api/hiring/v1/threads/${threadId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              current_phase: 'jd-approval',
+            }),
+          }).catch((e) => console.error('Failed to update thread phase:', e));
+        }
       } catch (error) {
         console.error('Screening error:', error);
         const errorMsg = {
@@ -247,6 +265,22 @@ ${jdContent}`,
     }
 
     actions.setSelectedRequest('creating');
+    // Persist selectedRequestId to localStorage for recovery on page reload
+    localStorage.setItem('selectedRequestId', 'creating');
+
+    actions.setPhase('hiring-request-creation');
+
+    // Update thread phase
+    if (threadId) {
+      await fetch(`/api/hiring/v1/threads/${threadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          current_phase: 'hiring-request-creation',
+        }),
+      }).catch((e) => console.error('Failed to update thread:', e));
+    }
   };
 
   const handleSelectId = (id: string) => {

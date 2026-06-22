@@ -5,8 +5,6 @@ import { Send } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useHiringChat } from './use-hiring-chat';
 
-type NewRequestData = Record<string, string>;
-
 export function HiringComposer() {
   const { state, actions } = useHiringChat();
   const [input, setInput] = useState('');
@@ -21,170 +19,11 @@ export function HiringComposer() {
   >('initial-prompt');
   const [extractedData, setExtractedData] = useState<Record<string, unknown>>({});
 
-  const triggerInitialPhaseWorkflow = useCallback(
-    async (tid: string, requestData?: Partial<NewRequestData>) => {
-      console.log('🎬 triggerInitialPhaseWorkflow called with:', {
-        tid,
-        selectedRequestId: state.selectedRequestId,
-      });
-      actions.setLoading(true);
-
-      try {
-        console.log('📡 Calling POST /api/hiring/v1/chat...');
-        const response = await fetch('/api/hiring/v1/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            threadId: tid,
-            messages: [{ content: 'Start JD creation' }],
-            requestId: state.selectedRequestId,
-            phase: 'initial',
-            ...(requestData && Object.keys(requestData).length > 0 && { newRequest: requestData }),
-          }),
-        });
-
-        if (!response.ok) {
-          console.error('❌ API returned error:', response.status);
-          throw new Error('Failed to start workflow');
-        }
-
-        console.log('✅ API call successful, reading stream...');
-
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error('No response stream');
-
-        const decoder = new TextDecoder();
-        let buffer = '';
-        const finalMessages: Array<{
-          role: 'user' | 'assistant';
-          content: string;
-          type: string;
-          metadata?: Record<string, unknown>;
-        }> = [];
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-
-                // Ignore thinking and text tokens - just log them
-                if (data.type === 'text') {
-                  console.log('📝 Token received');
-                } else if (data.type === 'thinking-start') {
-                  console.log('🧠 Reasoning started');
-                } else if (data.type === 'thinking-end') {
-                  console.log('🧠 Reasoning ended');
-                }
-
-                // Collect final action and result messages only
-                if (data.type === 'action') {
-                  console.log('📨 JD action message received');
-                  finalMessages.push({
-                    role: 'assistant',
-                    content: data.content,
-                    type: 'action' as const,
-                    metadata: {
-                      ...data.metadata,
-                      requiresApproval: true, // Flag for UI to show approve/feedback buttons
-                    },
-                  });
-                } else if (data.type === 'result') {
-                  console.log('📨 Scoring result message received');
-                  finalMessages.push({
-                    role: 'assistant',
-                    content: data.content,
-                    type: 'result' as const,
-                    metadata: data.metadata,
-                  });
-                }
-              } catch (e) {
-                console.error('Failed to parse SSE:', e);
-              }
-            }
-          }
-        }
-
-        // Add both messages to state and save to database
-        for (const msg of finalMessages) {
-          console.log(`✅ Adding ${msg.type} message to state`);
-          actions.addMessage(
-            msg as {
-              role: 'user' | 'assistant';
-              content: string;
-              type?: 'text' | 'action' | 'result';
-              metadata?: Record<string, unknown>;
-            },
-          );
-
-          // Save message to database
-          await fetch('/api/hiring/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ threadId: tid, ...msg }),
-          }).catch((e) => console.error(`Failed to save ${msg.type} message:`, e));
-        }
-      } catch (error) {
-        console.error('Workflow error:', error);
-        const errorMessage = {
-          role: 'assistant' as const,
-          content: '❌ Error starting JD creation. Please try again.',
-          type: 'text' as const,
-        };
-        actions.addMessage(errorMessage);
-
-        // Save error message to database
-        await fetch('/api/hiring/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ threadId: tid, ...errorMessage }),
-        }).catch((e) => console.error('Failed to save error message:', e));
-      } finally {
-        actions.setLoading(false);
-      }
-    },
-    [state.selectedRequestId, actions],
-  );
-
-  const createThread = useCallback(async () => {
-    try {
-      const response = await fetch('/api/hiring/v1/threads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          requestId: state.selectedRequestId,
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to create thread');
-      const data = await response.json();
-      setThreadId(data.threadId);
-
-      window.dispatchEvent(new Event('hiring:thread-created'));
-    } catch (error) {
-      console.error('Create thread error:', error);
-      actions.addMessage({
-        role: 'assistant',
-        content: '❌ Failed to create conversation thread. Please try again.',
-        type: 'text',
-      });
-    }
-  }, [state.selectedRequestId, actions]);
-
   const saveHiringRequest = useCallback(
     async (data: Record<string, unknown>) => {
       try {
+        // Set phase to confirming while saving
+        actions.setPhase('hiring-request-confirming');
         console.log('💾 Saving hiring request...');
         const response = await fetch('/api/hiring/v1/requests', {
           method: 'POST',
@@ -199,6 +38,15 @@ export function HiringComposer() {
             team_skill_gap_summary: data.team_skill_gap_summary,
             key_deliverables: data.key_deliverables,
             salary_range: data.salary_range,
+            seniority_level: data.seniority_level,
+            min_yoe: data.min_yoe,
+            max_yoe: data.max_yoe,
+            required_skills: data.required_skills,
+            nice_to_have_skills: data.nice_to_have_skills,
+            preferred_tech_stack: data.preferred_tech_stack,
+            team_description: data.team_description,
+            onboarding_timeline: data.onboarding_timeline,
+            responsibilities: data.responsibilities,
           }),
         });
 
@@ -211,25 +59,76 @@ export function HiringComposer() {
 
         console.log(`✅ Hiring request ${requestId} saved successfully`);
 
-        actions.addMessage({
-          role: 'assistant',
+        const successMsg = {
+          role: 'assistant' as const,
           content: `✅ Perfect! I've saved your hiring request **${requestId}**.\n\nWould you like me to start creating the job description now?`,
-          type: 'action',
-        });
+          type: 'action' as const,
+          metadata: { startJdCreation: true },
+        };
+
+        actions.addMessage(successMsg);
+
+        // Get thread ID once for reuse
+        const currentThreadId = localStorage.getItem('currentThreadId');
+
+        // Save message to database
+        if (currentThreadId) {
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ threadId: currentThreadId, ...successMsg }),
+          }).catch((e) => console.error('Failed to save success message:', e));
+        }
 
         if (requestId) {
           actions.setSelectedRequest(requestId);
+          // Persist to localStorage for recovery on page reload
+          localStorage.setItem('selectedRequestId', requestId);
+        }
+
+        // Move to request-selected phase after successful save
+        actions.setPhase('request-selected');
+
+        // Update thread with new phase and title
+        if (currentThreadId) {
+          const positionTitle = String(data.position_title) || 'Hiring Request';
+          await fetch(`/api/hiring/v1/threads/${currentThreadId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              current_phase: 'request-selected',
+              request_id: requestId,
+              title: `${positionTitle} — ${requestId}`,
+            }),
+          }).catch((e) => console.error('Failed to update thread:', e));
         }
 
         setExtractionPhase('initial-prompt');
         setExtractedData({});
       } catch (error) {
         console.error('❌ Save error:', error);
-        actions.addMessage({
-          role: 'assistant',
+        const errorMsg = {
+          role: 'assistant' as const,
           content: '❌ Failed to save the hiring request. Please try again.',
-          type: 'text',
-        });
+          type: 'text' as const,
+        };
+        actions.addMessage(errorMsg);
+
+        // Save error message to database
+        const errorThreadId = localStorage.getItem('currentThreadId');
+        if (errorThreadId) {
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ threadId: errorThreadId, ...errorMsg }),
+          }).catch((e) => console.error('Failed to save error message:', e));
+        }
+
+        // Reset phase on error
+        actions.setPhase('hiring-request-extracted');
       }
 
       actions.setLoading(false);
@@ -290,25 +189,6 @@ export function HiringComposer() {
 
   useEffect(() => {
     if (
-      state.currentPhase === 'initial' &&
-      state.selectedRequestId &&
-      state.selectedRequestId !== 'creating' &&
-      !threadId &&
-      !isLoadingExistingThread
-    ) {
-      console.log('✅ Creating thread for request:', state.selectedRequestId);
-      queueMicrotask(() => createThread());
-    }
-  }, [
-    state.currentPhase,
-    state.selectedRequestId,
-    threadId,
-    isLoadingExistingThread,
-    createThread,
-  ]);
-
-  useEffect(() => {
-    if (
       state.selectedRequestId &&
       state.selectedRequestId !== 'creating' &&
       state.currentPhase !== 'initial' &&
@@ -330,28 +210,10 @@ export function HiringComposer() {
       messageCount: state.messages.length,
     });
 
-    // Only trigger workflow for NEW threads (created in this session)
-    // Don't retrigger for existing threads loaded from database
-    if (
-      threadId &&
-      !isLoadingExistingThread &&
-      state.currentPhase === 'initial' &&
-      !triggeredThreadsRef.current.has(threadId) &&
-      state.messages.length > 0 && // Has at least initial messages
-      !state.messages.some((m) => m.content.includes('## ')) // No JD exists yet
-    ) {
-      console.log('🚀 Triggering workflow for thread:', threadId);
-      triggeredThreadsRef.current.add(threadId);
-      triggerInitialPhaseWorkflow(threadId, extractedData as Record<string, string>);
-    }
-  }, [
-    threadId,
-    isLoadingExistingThread,
-    state.currentPhase,
-    extractedData,
-    triggerInitialPhaseWorkflow,
-    state.messages,
-  ]);
+    // Note: triggerInitialPhaseWorkflow is no longer needed with new phase structure
+    // Extraction and workflow triggering is now handled manually via handleCreateRequestFlow
+    // and via "Start Creating JD" button click handlers
+  }, [threadId, isLoadingExistingThread, state.currentPhase, extractedData, state.messages]);
 
   const handleCreateRequestFlow = async (userInput: string) => {
     if (extractionPhase === 'initial-prompt') {
@@ -376,12 +238,28 @@ export function HiringComposer() {
         const extracted = data.extracted as Record<string, unknown> & { missing_fields?: string[] };
         const missingFields = extracted.missing_fields || [];
 
+        // Move to extracted phase after extraction
+        actions.setPhase('hiring-request-extracted');
+
+        // Update thread phase in database
+        const currentThreadId = threadId || localStorage.getItem('currentThreadId');
+        if (currentThreadId) {
+          await fetch(`/api/hiring/v1/threads/${currentThreadId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              current_phase: 'hiring-request-extracted',
+            }),
+          }).catch((e) => console.error('Failed to update thread phase:', e));
+        }
+
         if (missingFields.length === 0) {
           setExtractionPhase('collected-summary');
-          showExtractedSummary(extracted);
+          await showExtractedSummary(extracted);
         } else {
           setExtractionPhase('collected-summary');
-          showMissingFieldsPrompt(missingFields);
+          await showMissingFieldsPrompt(missingFields);
         }
       } catch (error) {
         console.error('Extraction error:', error);
@@ -421,9 +299,9 @@ export function HiringComposer() {
           updated as Record<string, unknown> & { missing_fields?: string[] }
         ).missing_fields;
         if (remainingMissing && remainingMissing.length > 0) {
-          showMissingFieldsPrompt(remainingMissing);
+          await showMissingFieldsPrompt(remainingMissing);
         } else {
-          showExtractedSummary(updated);
+          await showExtractedSummary(updated);
         }
       }
       actions.setLoading(false);
@@ -431,31 +309,72 @@ export function HiringComposer() {
     }
   };
 
-  const showMissingFieldsPrompt = (missingFields: string[]) => {
+  const showMissingFieldsPrompt = async (missingFields: string[]) => {
     const nextField = missingFields[0];
     if (!nextField) return;
 
     const fieldLabels: Record<string, string> = {
       position_title: 'What is the position title?',
       team_name: 'Which team is this for?',
-      seniority_level: 'What seniority level? (Junior/Mid/Senior)',
+      team_description: 'Can you describe the team and what they do?',
+      seniority_level: 'What seniority level? (Junior/Mid/Senior/Manager)',
+      min_yoe: 'How many years of experience minimum? (e.g., 5)',
       headcount_requested: 'How many positions to fill?',
-      salary_range: 'What is the salary range? (e.g., $1500-$2500)',
-      team_skill_gap_summary: 'What are the team skill gaps?',
+      salary_range: 'What is the salary range?',
+      urgency_level: 'What is the urgency? (Low/Medium/High/Critical)',
+      onboarding_timeline: 'When do you need them onboarded? (e.g., 4-6 weeks)',
+      team_skill_gap_summary: 'What are the team skill gaps you want to fill?',
       key_deliverables: 'What are the key deliverables for this role?',
       business_justification: 'What is the business justification for this hire?',
+      preferred_tech_stack: 'What technologies/stack do you prefer? (e.g., React, Node.js, AWS)',
+      required_skills: 'What are the required skills?',
+      nice_to_have_skills: 'What are nice-to-have skills?',
     };
 
     const label = fieldLabels[nextField] || `Tell me about ${nextField}:`;
 
-    actions.addMessage({
-      role: 'assistant',
+    const assistantMsg = {
+      role: 'assistant' as const,
       content: `I need a bit more information to complete your hiring request.\n\n**${label}**`,
-      type: 'action',
-    });
+      type: 'action' as const,
+    };
+
+    actions.addMessage(assistantMsg);
+
+    // Save to database
+    const savedThreadId = localStorage.getItem('currentThreadId');
+    if (savedThreadId) {
+      await fetch('/api/hiring/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ threadId: savedThreadId, ...assistantMsg }),
+      }).catch((e) => console.error('Failed to save missing field prompt:', e));
+    }
   };
 
-  const showExtractedSummary = (data: Record<string, unknown>) => {
+  const showExtractedSummary = async (data: Record<string, unknown>) => {
+    const responsibilities = Array.isArray(data.responsibilities)
+      ? data.responsibilities.map((r) => `- ${r}`).join('\n')
+      : data.key_deliverables || 'TBD';
+
+    const techStack = Array.isArray(data.preferred_tech_stack)
+      ? data.preferred_tech_stack.join(', ')
+      : 'Not specified';
+
+    const requiredSkills = Array.isArray(data.required_skills)
+      ? data.required_skills.join(', ')
+      : 'Not specified';
+
+    const niceToHaveSkills = Array.isArray(data.nice_to_have_skills)
+      ? data.nice_to_have_skills.join(', ')
+      : 'Not specified';
+
+    const yoeInfo =
+      data.min_yoe || data.max_yoe
+        ? `${data.min_yoe || '0'}${data.max_yoe ? `-${data.max_yoe}` : '+'} years`
+        : 'Not specified';
+
     const summary = `
 📋 HIRING_REQUEST_SUMMARY
 
@@ -463,24 +382,51 @@ export function HiringComposer() {
 **Team:** ${String(data.team_name) || 'TBD'}
 **Headcount:** ${data.headcount_requested || 1}
 **Seniority Level:** ${data.seniority_level || 'TBD'}
+**Years of Experience:** ${yoeInfo}
 **Urgency:** ${data.urgency_level || 'Medium'}
+**Onboarding Timeline:** ${String(data.onboarding_timeline) || 'ASAP'}
 **Salary Range:** ${data.salary_range || 'TBD'}
 
-**Key Deliverables:**
-${data.key_deliverables || 'TBD'}
+**Team Description:**
+${String(data.team_description) || 'Not provided'}
 
-**Business Justification:**
-${data.business_justification || 'TBD'}
+**Responsibilities:**
+${responsibilities}
+
+**Required Skills:**
+${requiredSkills}
+
+**Nice-to-Have Skills:**
+${niceToHaveSkills}
+
+**Preferred Tech Stack:**
+${techStack}
 
 **Team Skill Gaps:**
-${data.team_skill_gap_summary || 'TBD'}
+${String(data.team_skill_gap_summary) || 'TBD'}
+
+**Business Justification:**
+${String(data.business_justification) || 'TBD'}
     `.trim();
 
-    actions.addMessage({
-      role: 'assistant',
+    const summaryMsg = {
+      role: 'assistant' as const,
       content: summary,
-      type: 'action',
-    });
+      type: 'action' as const,
+    };
+
+    actions.addMessage(summaryMsg);
+
+    // Save summary message to database
+    const savedThreadId = localStorage.getItem('currentThreadId');
+    if (savedThreadId) {
+      await fetch('/api/hiring/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ threadId: savedThreadId, ...summaryMsg }),
+      }).catch((e) => console.error('Failed to save summary message:', e));
+    }
 
     setExtractionPhase('completed');
   };
@@ -500,6 +446,22 @@ ${data.team_skill_gap_summary || 'TBD'}
 
     try {
       if (state.selectedRequestId === 'creating') {
+        // Save user message to database during hiring request extraction
+        const savedThreadId = localStorage.getItem('currentThreadId');
+        if (savedThreadId) {
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              threadId: savedThreadId,
+              role: 'user',
+              content: userInput,
+              type: 'text',
+            }),
+          }).catch((e) => console.error('Failed to save user message:', e));
+        }
+
         if (extractionPhase === 'completed') {
           const userResponse = userInput.toLowerCase().trim();
           if (userResponse.includes('confirm') || userResponse === 'yes') {
@@ -508,12 +470,24 @@ ${data.team_skill_gap_summary || 'TBD'}
           } else if (userResponse.includes('change') || userResponse === 'no') {
             setExtractionPhase('initial-prompt');
             setExtractedData({});
-            actions.addMessage({
-              role: 'assistant',
+            const assistantMsg = {
+              role: 'assistant' as const,
               content:
                 "No problem! Please describe your hiring request again, and I'll extract the details.",
-              type: 'action',
-            });
+              type: 'action' as const,
+            };
+            actions.addMessage(assistantMsg);
+
+            // Save assistant message to database
+            if (savedThreadId) {
+              await fetch('/api/hiring/v1/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ threadId: savedThreadId, ...assistantMsg }),
+              }).catch((e) => console.error('Failed to save assistant message:', e));
+            }
+
             actions.setLoading(false);
             return;
           }
