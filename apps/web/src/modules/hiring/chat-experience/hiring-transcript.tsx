@@ -759,26 +759,27 @@ Generated in ${scoringMetadata.iterations || 0} iteration${(scoringMetadata.iter
           <BatchScreeningCard
             statistics={{
               passCandidates:
-                ((message.metadata as Record<string, unknown>).statistics as any)?.passCandidates ||
-                0,
+                ((message.metadata as BatchScreeningResult['metadata']).statistics
+                  ?.passCandidates as number) || 0,
               passPercentage:
-                ((message.metadata as Record<string, unknown>).statistics as any)?.passPercentage ||
-                0,
+                ((message.metadata as BatchScreeningResult['metadata']).statistics
+                  ?.passPercentage as number) || 0,
               needMoreInfoCandidates:
-                ((message.metadata as Record<string, unknown>).statistics as any)
-                  ?.needMoreInfoCandidates || 0,
+                ((message.metadata as BatchScreeningResult['metadata']).statistics
+                  ?.needMoreInfoCandidates as number) || 0,
               needMoreInfoPercentage:
-                ((message.metadata as Record<string, unknown>).statistics as any)
-                  ?.needMoreInfoPercentage || 0,
+                ((message.metadata as BatchScreeningResult['metadata']).statistics
+                  ?.needMoreInfoPercentage as number) || 0,
               rejectCandidates:
-                ((message.metadata as Record<string, unknown>).statistics as any)
-                  ?.rejectCandidates || 0,
+                ((message.metadata as BatchScreeningResult['metadata']).statistics
+                  ?.rejectCandidates as number) || 0,
               rejectPercentage:
-                ((message.metadata as Record<string, unknown>).statistics as any)
-                  ?.rejectPercentage || 0,
+                ((message.metadata as BatchScreeningResult['metadata']).statistics
+                  ?.rejectPercentage as number) || 0,
             }}
             scoredCandidates={
-              ((message.metadata as Record<string, unknown>).scoredCandidates || []) as any
+              ((message.metadata as BatchScreeningResult['metadata']).scoredCandidates ||
+                []) as ScoredCandidate[]
             }
           />
         ) : (
