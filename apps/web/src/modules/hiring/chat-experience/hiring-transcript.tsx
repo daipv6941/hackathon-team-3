@@ -68,9 +68,14 @@ export function HiringTranscript() {
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      // Use requestAnimationFrame to ensure DOM has updated before scrolling
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
     }
-  }, []);
+  }, [state.messages]);
 
   // Only show workflow selector if no flow is selected yet
   if (state.currentPhase === 'selection' && !state.selectedFlow) {
@@ -209,12 +214,13 @@ function MessageBubble({
       const data = await response.json();
       console.log('✅ JD approved successfully:', data);
 
-      // Save jdId to state for screening
+      // Save jdId to state and localStorage for screening
       actions.setSelectedJob(data.jdId);
+      localStorage.setItem('selectedJobId', data.jdId);
 
       // Add confirmation message
-      actions.addMessage({
-        role: 'assistant',
+      const approvalMsg = {
+        role: 'assistant' as const,
         content: `✅ **JD Approved & Saved!**
 
 Your JD has been approved and saved to the system. The hiring request is now in **JD Approved** status.
@@ -225,11 +231,36 @@ Your JD has been approved and saved to the system. The hiring request is now in 
 3. Move to shortlist finalization
 
 Ready to screen candidates?`,
-        type: 'action',
-      });
+        type: 'action' as const,
+      };
+      actions.addMessage(approvalMsg);
 
-      // Advance to next phase
+      // Save approval message to database
+      const threadId = state.currentThreadId || localStorage.getItem('currentThreadId');
+      if (threadId) {
+        await fetch('/api/hiring/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ threadId, ...approvalMsg }),
+        }).catch((e) => console.error('Failed to save approval message:', e));
+      }
+
+      // Stay in jd-approval phase (screening button will appear in this phase)
       actions.setPhase('jd-approval');
+
+      // Update thread phase
+      if (threadId) {
+        await fetch(`/api/hiring/v1/threads/${threadId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            current_phase: 'jd-approval',
+          }),
+        }).catch((e) => console.error('Failed to update thread:', e));
+      }
+
       setShowActions(false);
     } catch (error) {
       console.error('Approve error:', error);
@@ -244,6 +275,7 @@ Ready to screen candidates?`,
   const handleScreenAndShortlist = async () => {
     try {
       actions.setLoading(true);
+      actions.setPhase('cv-screening');
       console.log('📊 Starting batch screening for request:', state.selectedRequestId);
 
       if (!state.selectedJobId) {
@@ -257,6 +289,7 @@ Ready to screen candidates?`,
         body: JSON.stringify({
           requestId: state.selectedRequestId,
           jdId: state.selectedJobId, // Use approved JD ID
+          threadId: state.currentThreadId, // Include thread ID for message tracking
         }),
       });
 
@@ -407,14 +440,39 @@ ${rejectCandidates
     : ''
 }`;
 
-      actions.addMessage({
-        role: 'assistant',
+      const reportMsg = {
+        role: 'assistant' as const,
         content: reportHtml,
-        type: 'action',
+        type: 'action' as const,
         metadata: result,
-      });
+      };
+      actions.addMessage(reportMsg);
+
+      // Save report message to database
+      const threadId = state.currentThreadId || localStorage.getItem('currentThreadId');
+      if (threadId) {
+        await fetch('/api/hiring/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ threadId, ...reportMsg }),
+        }).catch((e) => console.error('Failed to save report message:', e));
+      }
 
       actions.setPhase('confirmation');
+
+      // Update thread phase
+      if (threadId) {
+        await fetch(`/api/hiring/v1/threads/${threadId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            current_phase: 'confirmation',
+          }),
+        }).catch((e) => console.error('Failed to update thread:', e));
+      }
+
       setShowActions(false);
     } catch (error) {
       console.error('Screen and shortlist error:', error);
@@ -512,6 +570,170 @@ ${rejectCandidates
     window.dispatchEvent(event);
   };
 
+  const handleStartJobDescription = async () => {
+    try {
+      actions.setLoading(true);
+      actions.setPhase('jd-generation');
+      console.log('📝 Starting JD creation for request:', state.selectedRequestId);
+
+      if (!state.selectedRequestId) {
+        throw new Error('No hiring request selected');
+      }
+
+      const response = await fetch('/api/hiring/v1/jd/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          requestId: state.selectedRequestId,
+          threadId: state.currentThreadId,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to generate JD: ${error}`);
+      }
+
+      // Stream the JD generation response
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response stream');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let jdContent = '';
+      let scoringMetadata: Record<string, unknown> = {};
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              // Handle thinking tokens - just stream to output
+              if (
+                data.type === 'text' ||
+                data.type === 'thinking-start' ||
+                data.type === 'thinking-end'
+              ) {
+                // These are streaming tokens, can be logged or ignored
+                if (
+                  data.type === 'text' &&
+                  data.type !== 'thinking-start' &&
+                  data.type !== 'thinking-end'
+                ) {
+                  // Only capture final JD text content, not thinking text
+                  if (data.content && !data.content.includes('##')) {
+                    jdContent = data.content;
+                  }
+                }
+              }
+              // Handle action message (JD content)
+              else if (data.type === 'action') {
+                jdContent = data.content;
+              }
+              // Handle result message (scoring breakdown)
+              else if (data.type === 'result') {
+                scoringMetadata = data.metadata || {};
+              }
+            } catch (e) {
+              console.error('Failed to parse stream:', e);
+            }
+          }
+        }
+      }
+
+      if (!jdContent) {
+        throw new Error('No JD content generated');
+      }
+
+      console.log('✅ JD generated successfully with score:', scoringMetadata.clarityScore);
+
+      const threadId = state.currentThreadId || localStorage.getItem('currentThreadId');
+
+      // Add JD to messages with approval flag
+      const jdMsg = {
+        role: 'assistant' as const,
+        content: jdContent,
+        type: 'action' as const,
+        metadata: { requiresApproval: true },
+      };
+      actions.addMessage(jdMsg);
+
+      // Save JD message to database
+      if (threadId) {
+        await fetch('/api/hiring/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ threadId, ...jdMsg }),
+        }).catch((e) => console.error('Failed to save JD message:', e));
+      }
+
+      // Add scoring breakdown if available
+      if (scoringMetadata.clarityScore !== undefined) {
+        const scoringContent = `## 📊 Quality Assessment
+
+**Clarity Score: ${scoringMetadata.clarityScore}/100** — ${scoringMetadata.status || 'Good'}
+
+Generated in ${scoringMetadata.iterations || 0} iteration${(scoringMetadata.iterations || 0) !== 1 ? 's' : ''} (${scoringMetadata.confidence || 'Medium'} confidence)`;
+
+        const scoringMsg = {
+          role: 'assistant' as const,
+          content: scoringContent,
+          type: 'result' as const,
+          metadata: scoringMetadata,
+        };
+
+        actions.addMessage(scoringMsg);
+
+        // Save scoring message to database
+        if (threadId) {
+          await fetch('/api/hiring/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ threadId, ...scoringMsg }),
+          }).catch((e) => console.error('Failed to save scoring message:', e));
+        }
+      }
+
+      // Move to jd-approval phase
+      actions.setPhase('jd-approval');
+
+      // Update thread phase
+      if (threadId) {
+        await fetch(`/api/hiring/v1/threads/${threadId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            current_phase: 'jd-approval',
+          }),
+        }).catch((e) => console.error('Failed to update thread:', e));
+      }
+
+      setShowActions(false);
+    } catch (error) {
+      console.error('❌ JD generation error:', error);
+      actions.addMessage({
+        role: 'assistant',
+        content: `❌ Failed to generate job description: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        type: 'text',
+      });
+      // Reset phase on error
+      actions.setPhase('request-selected');
+    } finally {
+      actions.setLoading(false);
+    }
+  };
+
   return (
     <div className={`flex items-start gap-3 ${isUser ? 'justify-end' : ''}`}>
       {!isUser && (
@@ -530,11 +752,25 @@ ${rejectCandidates
         <div
           className={`rounded-lg px-4 py-3 text-sm ${
             isUser
-              ? 'bg-primary text-primary-foreground rounded-br-none'
+              ? 'bg-primary text-white rounded-br-none'
               : 'bg-surface-2 text-ink rounded-bl-none'
           }`}
         >
-          <div className="whitespace-pre-wrap">{message.content as unknown as string}</div>
+          <div className="whitespace-pre-wrap">
+            {(message.metadata as Record<string, unknown> | undefined)?.requestPath ? (
+              <>
+                {message.content}
+                <a
+                  href={(message.metadata as Record<string, unknown>).requestPath as string}
+                  className="ml-2 inline-flex items-center gap-1 font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+                >
+                  Click here →
+                </a>
+              </>
+            ) : (
+              (message.content as unknown as string)
+            )}
+          </div>
         </div>
 
         {/* Show scoring breakdown for 'result' type messages with clarityScore */}
@@ -670,11 +906,52 @@ ${rejectCandidates
                         const data = await response.json();
                         console.log('✅ Confirm response:', data);
 
-                        actions.addMessage({
-                          role: 'assistant',
-                          content: `✅ **Shortlist Confirmed!**\n\nRequest status updated to **${data.requestStatus}**.`,
-                          type: 'action',
-                        });
+                        const requestId = state.selectedRequestId;
+                        const confirmMsg = {
+                          role: 'assistant' as const,
+                          content: `✅ **Shortlist Confirmed!**\n\nRequest status updated to **${data.requestStatus}**.\n\n📋 View hiring request: /hiring/requests/${requestId}`,
+                          type: 'action' as const,
+                          metadata: { requestId, requestPath: `/hiring/requests/${requestId}` },
+                        };
+                        actions.addMessage(confirmMsg);
+
+                        // Save confirmation message to database
+                        const threadId =
+                          state.currentThreadId || localStorage.getItem('currentThreadId');
+                        if (threadId) {
+                          const saveResponse = await fetch('/api/hiring/v1/messages', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({ threadId, ...confirmMsg }),
+                          });
+                          if (!saveResponse.ok) {
+                            console.error(
+                              '❌ Failed to save confirm message:',
+                              await saveResponse.text(),
+                            );
+                          } else {
+                            console.log('✅ Confirm message saved');
+                          }
+
+                          // Update thread phase to complete
+                          const phaseResponse = await fetch(`/api/hiring/v1/threads/${threadId}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({
+                              current_phase: 'complete',
+                            }),
+                          });
+                          if (!phaseResponse.ok) {
+                            console.error(
+                              '❌ Failed to update thread phase:',
+                              await phaseResponse.text(),
+                            );
+                          } else {
+                            console.log('✅ Thread phase updated to complete');
+                          }
+                        }
 
                         actions.setPhase('complete');
                         setShowActions(false);
@@ -694,6 +971,44 @@ ${rejectCandidates
                   </Button>
                 </div>
               )}
+
+            {/* Start JD creation */}
+            {(message.metadata as Record<string, unknown> | undefined)?.startJdCreation && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => {
+                    actions.addMessage({
+                      role: 'user',
+                      content: 'Yes, start creating the job description',
+                      type: 'text',
+                    });
+                    setShowActions(false);
+                    handleStartJobDescription();
+                  }}
+                  className="gap-1"
+                >
+                  <CheckCircle2 className="h-3 w-3" />
+                  Yes, Start Creating JD
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    actions.addMessage({
+                      role: 'user',
+                      content: 'No, skip for now',
+                      type: 'text',
+                    });
+                    setShowActions(false);
+                  }}
+                  className="gap-1"
+                >
+                  Skip For Now
+                </Button>
+              </div>
+            )}
           </>
         )}
 

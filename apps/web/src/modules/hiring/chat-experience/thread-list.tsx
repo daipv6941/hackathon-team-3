@@ -154,24 +154,29 @@ export function ThreadList() {
 
       if (thread.request_id) {
         actions.setSelectedRequest(thread.request_id);
+        localStorage.setItem('selectedRequestId', thread.request_id);
       }
 
       const validPhases = [
-        'initial',
-        'complete',
         'selection',
-        'jd-creation',
+        'request-selection',
+        'hiring-request-creation',
+        'hiring-request-extracted',
+        'hiring-request-confirming',
+        'request-selected',
+        'jd-generation',
         'jd-approval',
         'cv-screening',
         'confirmation',
+        'complete',
       ] as const;
       type ValidPhase = (typeof validPhases)[number];
       const isValidPhase = (value: unknown): value is ValidPhase => {
         return typeof value === 'string' && validPhases.includes(value as ValidPhase);
       };
       const phase: ValidPhase = isValidPhase(thread.current_phase)
-        ? thread.current_phase
-        : 'initial';
+        ? (thread.current_phase as ValidPhase)
+        : 'selection';
       actions.setPhase(phase);
 
       // Load messages

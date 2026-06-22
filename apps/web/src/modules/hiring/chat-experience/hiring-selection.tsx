@@ -44,7 +44,7 @@ export function HiringSelection() {
 
         // Set flow and messages
         actions.setSelectedFlow(flow);
-        actions.setPhase('selection');
+        actions.setPhase('request-selection');
 
         if (flow === 'jd-draft') {
           const detailedMsg = {

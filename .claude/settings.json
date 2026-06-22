@@ -193,7 +193,20 @@
       "Bash(pnpm turbo *)",
       "Bash(pnpm biome *)",
       "Bash(pnpm lint:boundaries)",
-      "Bash(pnpm depcruise *)"
+      "Bash(pnpm depcruise *)",
+      "Bash(bash -c 'source ~/.nvm/nvm.sh && nvm use 24 && git push')",
+      "Bash(curl -X POST http://localhost:5173/api/hiring/v1/requests/extract -H 'Content-Type: application/json' -d '{\"description\":\"We are hiring a Middle QA Engineer to strengthen our product quality and testing processes. The role will be responsible for both manual and automation testing of our web and mobile applications. Key responsibilities include creating test cases, executing regression testing, identifying defects, and maintaining automated test scripts. We are looking for someone with 3–5 years of QA experience and hands-on experience with automation tools such as Playwright, Selenium, or Cypress. The current team needs stronger automation coverage and improved release quality. This is 1 urgent opening to support upcoming feature releases and reduce production issues.\"}')",
+      "Bash(env)",
+      "Bash(pkill -f \"src/index.ts\")",
+      "Bash(killall node *)",
+      "Bash(killall -9 node tsx vite)",
+      "Bash(awk '/function MessageBubble/,/^}$/' /Users/macmini/web/hackathon-team-3/apps/web/src/modules/hiring/chat-experience/hiring-transcript.tsx)",
+      "Bash(pnpm --filter @seta/web typecheck)",
+      "Bash(npx -y tsc --noEmit apps/web/src/modules/hiring/chat-experience/hiring-transcript.tsx)",
+      "Bash(node --check /Users/macmini/web/hackathon-team-3/packages/hiring/src/backend/routes/chat.ts)",
+      "Bash(curl -s http://localhost:5173/hiring/studio)",
+      "Bash(bash -c 'nvm use 24.17.0 && node --version')",
+      "Bash(bash -c 'nvm use 24.17.0 && pnpm dev')"
     ],
     "additionalDirectories": [
       "/private/tmp",

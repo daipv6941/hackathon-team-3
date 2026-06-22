@@ -16,8 +16,12 @@ export interface HiringChatState {
   isLoading: boolean;
   currentPhase:
     | 'selection'
-    | 'initial'
-    | 'jd-creation'
+    | 'request-selection'
+    | 'hiring-request-creation'
+    | 'hiring-request-extracted'
+    | 'hiring-request-confirming'
+    | 'request-selected'
+    | 'jd-generation'
     | 'jd-approval'
     | 'cv-screening'
     | 'confirmation'
@@ -25,6 +29,7 @@ export interface HiringChatState {
   selectedFlow?: 'jd-draft' | 'cv-shortlist';
   selectedRequestId?: string;
   selectedJobId?: string;
+  currentThreadId?: string;
   historyLoading: boolean;
 }
 
@@ -38,6 +43,7 @@ export interface HiringContextType {
     setSelectedFlow: (flow: 'jd-draft' | 'cv-shortlist') => void;
     setSelectedRequest: (requestId: string | undefined) => void;
     setSelectedJob: (jobId: string | undefined) => void;
+    setCurrentThread: (threadId: string | undefined) => void;
     clearMessages: () => void;
   };
 }
