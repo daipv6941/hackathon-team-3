@@ -539,13 +539,10 @@ ${String(data.business_justification) || 'TBD'}
         });
       }
 
-      const phaseSequence = [
-        'jd-approval',
-        'cv-screening',
-        'confirmation',
-        'complete',
-      ] as const;
-      const currentIndex = phaseSequence.indexOf(state.currentPhase as typeof phaseSequence[number]);
+      const phaseSequence = ['jd-approval', 'cv-screening', 'confirmation', 'complete'] as const;
+      const currentIndex = phaseSequence.indexOf(
+        state.currentPhase as (typeof phaseSequence)[number],
+      );
       const nextPhase = currentIndex >= 0 ? phaseSequence[currentIndex + 1] : undefined;
       if (nextPhase) {
         actions.setPhase(nextPhase as HiringChatState['currentPhase']);
