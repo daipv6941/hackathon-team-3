@@ -21,7 +21,7 @@ export function ThreadList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
-  const [limit] = useState(10);
+  const [limit] = useState(15);
   const loadedRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 

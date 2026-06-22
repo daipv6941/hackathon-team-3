@@ -664,6 +664,11 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
           const screeningResults: Array<{
             cvId: string;
             candidateName: string;
+            currentTitle?: string;
+            currentCompany?: string;
+            yearsOfExperience?: number;
+            englishLevel?: string;
+            cvSkills?: string;
             fitScore: number;
             recommendation: string;
             fitSummary: string;
@@ -708,6 +713,11 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
               screeningResults.push({
                 cvId: result.cvId,
                 candidateName: result.candidateName,
+                currentTitle: candidateData?.current_title || undefined,
+                currentCompany: candidateData?.current_company || undefined,
+                yearsOfExperience: candidateData?.years_of_experience || undefined,
+                englishLevel: candidateData?.english_level || undefined,
+                cvSkills: candidateData?.cv_skills || undefined,
                 fitScore: result.fitScore || 0,
                 recommendation: result.recommendation || 'Need More Info',
                 fitSummary: result.fitSummary || '',
