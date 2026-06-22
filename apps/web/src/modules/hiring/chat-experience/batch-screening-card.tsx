@@ -36,7 +36,13 @@ function getScoreColor(score: number): string {
   return 'bg-red-100 text-red-700';
 }
 
-function CandidateCard({ candidate, borderColor }: { candidate: ScoredCandidate; borderColor: string }) {
+function CandidateCard({
+  candidate,
+  borderColor,
+}: {
+  candidate: ScoredCandidate;
+  borderColor: string;
+}) {
   return (
     <div className={`rounded border ${borderColor} p-3`}>
       <div className="flex justify-between">
@@ -50,8 +56,8 @@ function CandidateCard({ candidate, borderColor }: { candidate: ScoredCandidate;
         <div className="mt-2">
           <p className="text-xs font-medium text-ink-subtle">Follow-up Questions:</p>
           <ul className="mt-1 space-y-1">
-            {candidate.followUpQuestions.map((q, idx) => (
-              <li key={idx} className="text-xs text-ink">
+            {candidate.followUpQuestions.map((q) => (
+              <li key={q} className="text-xs text-ink">
                 • {q}
               </li>
             ))}
@@ -62,15 +68,18 @@ function CandidateCard({ candidate, borderColor }: { candidate: ScoredCandidate;
   );
 }
 
-export function BatchScreeningCard({
-  statistics,
-  scoredCandidates,
-}: BatchScreeningCardProps) {
+export function BatchScreeningCard({ statistics, scoredCandidates }: BatchScreeningCardProps) {
   const passCandidates = scoredCandidates.filter(
-    (c) => c.recommendation.includes('Pass') || c.recommendation.includes('Strong shortlist') || c.recommendation.includes('Shortlist'),
+    (c) =>
+      c.recommendation.includes('Pass') ||
+      c.recommendation.includes('Strong shortlist') ||
+      c.recommendation.includes('Shortlist'),
   );
   const needMoreInfoCandidates = scoredCandidates.filter(
-    (c) => c.recommendation.includes('Need More Info') || c.recommendation.includes('Medium') || c.recommendation.includes('Low'),
+    (c) =>
+      c.recommendation.includes('Need More Info') ||
+      c.recommendation.includes('Medium') ||
+      c.recommendation.includes('Low'),
   );
   const rejectCandidates = scoredCandidates.filter((c) => c.recommendation.includes('Reject'));
 
@@ -87,7 +96,9 @@ export function BatchScreeningCard({
         </div>
         <div className="rounded-lg bg-yellow-50 p-3">
           <div className="text-sm font-medium text-yellow-700">Need More Info</div>
-          <div className="mt-1 text-2xl font-bold text-yellow-900">{statistics.needMoreInfoCandidates}</div>
+          <div className="mt-1 text-2xl font-bold text-yellow-900">
+            {statistics.needMoreInfoCandidates}
+          </div>
           <div className="text-xs text-yellow-600">{statistics.needMoreInfoPercentage}%</div>
         </div>
         <div className="rounded-lg bg-red-50 p-3">
@@ -103,7 +114,11 @@ export function BatchScreeningCard({
           <h3 className="font-semibold text-green-700">✅ Ready for Interview</h3>
           <div className="mt-3 space-y-3">
             {passCandidates.map((candidate) => (
-              <CandidateCard key={candidate.cvId} candidate={candidate} borderColor="border-green-200 bg-green-50" />
+              <CandidateCard
+                key={candidate.cvId}
+                candidate={candidate}
+                borderColor="border-green-200 bg-green-50"
+              />
             ))}
           </div>
         </div>
@@ -115,7 +130,11 @@ export function BatchScreeningCard({
           <h3 className="font-semibold text-yellow-700">⚠️ Need More Info</h3>
           <div className="mt-3 space-y-3">
             {needMoreInfoCandidates.map((candidate) => (
-              <CandidateCard key={candidate.cvId} candidate={candidate} borderColor="border-yellow-200 bg-yellow-50" />
+              <CandidateCard
+                key={candidate.cvId}
+                candidate={candidate}
+                borderColor="border-yellow-200 bg-yellow-50"
+              />
             ))}
           </div>
         </div>
@@ -127,7 +146,11 @@ export function BatchScreeningCard({
           <h3 className="font-semibold text-red-700">❌ Reject Candidates</h3>
           <div className="mt-3 space-y-2">
             {rejectCandidates.map((candidate) => (
-              <CandidateCard key={candidate.cvId} candidate={candidate} borderColor="border-red-200 bg-red-50" />
+              <CandidateCard
+                key={candidate.cvId}
+                candidate={candidate}
+                borderColor="border-red-200 bg-red-50"
+              />
             ))}
           </div>
         </div>
