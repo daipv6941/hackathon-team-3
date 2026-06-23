@@ -5,6 +5,7 @@ export const HIRING_JD_CREATED = 'hiring.jd.created' as const;
 export const HIRING_JD_APPROVED = 'hiring.jd.approved' as const;
 export const HIRING_CANDIDATE_SCREENED = 'hiring.candidate.screened' as const;
 export const HIRING_SHORTLIST_CONFIRMED = 'hiring.shortlist.confirmed' as const;
+export const HIRING_SHORTLIST_OVERDUE = 'hiring.shortlist.overdue' as const;
 export const HIRING_DECISION_RECORDED = 'hiring.decision.recorded' as const;
 export const HIRING_SLA_BREACH = 'hiring.sla.breach' as const;
 
@@ -51,6 +52,14 @@ export const HIRING_DECISION_RECORDED_PAYLOAD = z.object({
   recorded_by: z.string().uuid(),
 });
 
+export const HIRING_SHORTLIST_OVERDUE_PAYLOAD = z.object({
+  request_id: z.string(),
+  tenant_id: z.string().uuid(),
+  hr_owner: z.string().uuid(),
+  position_title: z.string(),
+  overdue_since: z.string().datetime(),
+});
+
 export const HIRING_SLA_BREACH_PAYLOAD = z.object({
   cv_id: z.string(),
   request_id: z.string(),
@@ -65,6 +74,7 @@ export const HIRING_EVENTS = {
   [HIRING_JD_APPROVED]: HIRING_JD_APPROVED_PAYLOAD,
   [HIRING_CANDIDATE_SCREENED]: HIRING_CANDIDATE_SCREENED_PAYLOAD,
   [HIRING_SHORTLIST_CONFIRMED]: HIRING_SHORTLIST_CONFIRMED_PAYLOAD,
+  [HIRING_SHORTLIST_OVERDUE]: HIRING_SHORTLIST_OVERDUE_PAYLOAD,
   [HIRING_DECISION_RECORDED]: HIRING_DECISION_RECORDED_PAYLOAD,
   [HIRING_SLA_BREACH]: HIRING_SLA_BREACH_PAYLOAD,
 } as const;

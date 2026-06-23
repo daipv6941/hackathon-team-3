@@ -1,4 +1,5 @@
 import type { Mastra } from '@mastra/core';
+import type { SessionScope } from '@seta/core';
 import { and, count, desc, eq, ilike, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import type { Hono } from 'hono';
@@ -23,10 +24,7 @@ export interface HiringRouteDeps {
 
 export interface HiringRouteEnv {
   Variables: {
-    session?: {
-      tenant_id: string;
-      user_id: string;
-    };
+    user?: SessionScope;
   };
 }
 
@@ -53,7 +51,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         initialMessage,
       } = body as Record<string, unknown>;
 
-      const session = c.get('session') ?? {
+      const session = c.get('user') ?? {
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         user_id: '550e8400-e29b-41d4-a716-446655440001',
       };
@@ -144,7 +142,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
   app.get('/v1/threads', async (c) => {
     try {
-      const session = c.get('session') ?? {
+      const session = c.get('user') ?? {
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         user_id: '550e8400-e29b-41d4-a716-446655440001',
       };
@@ -236,7 +234,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
 
   app.get('/v1/requests', async (c) => {
     try {
-      const session = c.get('session') ?? {
+      const session = c.get('user') ?? {
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         user_id: '550e8400-e29b-41d4-a716-446655440001',
       };
@@ -274,7 +272,7 @@ export function mountHiringChatRoutes(app: Hono<HiringRouteEnv>, deps: HiringRou
         return c.json({ error: 'threadId and requestId required' }, 400);
       }
 
-      const session = c.get('session') ?? {
+      const session = c.get('user') ?? {
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         user_id: '550e8400-e29b-41d4-a716-446655440001',
       };
@@ -842,7 +840,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
     try {
       const body = await c.req.json();
 
-      const session = c.get('session') ?? {
+      const session = c.get('user') ?? {
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         user_id: '550e8400-e29b-41d4-a716-446655440001',
       };
@@ -967,7 +965,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         return c.json({ error: 'requestId required' }, 400);
       }
 
-      const session = c.get('session') ?? {
+      const session = c.get('user') ?? {
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         user_id: '550e8400-e29b-41d4-a716-446655440001',
       };

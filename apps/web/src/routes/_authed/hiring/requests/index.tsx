@@ -2,7 +2,7 @@
 
 import { Button, Card } from '@seta/shared-ui';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { AlertCircle, CheckCircle2, ChevronRight, Clock, Zap } from 'lucide-react';
+import { AlertCircle, BellRing, CheckCircle2, ChevronRight, Clock, Zap } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 export const Route = createFileRoute('/_authed/hiring/requests/')({
@@ -67,7 +67,20 @@ function RequestsPage() {
   const [requests, setRequests] = useState<HiringRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isTriggering, setIsTriggering] = useState(false);
   const loadedRef = useRef(false);
+
+  const triggerOverdueCheck = async () => {
+    setIsTriggering(true);
+    try {
+      await fetch('/api/hiring/v1/trigger-overdue-check', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } finally {
+      setIsTriggering(false);
+    }
+  };
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -109,12 +122,18 @@ function RequestsPage() {
           <Button
             variant="secondary"
             size="sm"
+            disabled={isTriggering}
+            onClick={triggerOverdueCheck}
+          >
+            <BellRing className="h-4 w-4" />
+            {isTriggering ? 'Sending...' : 'Notify Overdue'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => navigate({ to: '/hiring/candidates' })}
           >
             Candidates Pool
-          </Button>
-          <Button variant="primary" size="sm">
-            New Request
           </Button>
         </div>
       </div>
