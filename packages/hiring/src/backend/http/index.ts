@@ -88,17 +88,22 @@ export function buildHiringRoutes(pool?: Pool) {
               overdue_since: request.updated_at.toISOString(),
             },
           });
-          await requestNotification({
-            tenant_id: request.tenant_id,
-            event_type: HIRING_SHORTLIST_OVERDUE,
-            user_ids: [request.hr_owner],
-            source_event_id: eventId,
-            payload: {
-              title: 'Shortlist pending review',
-              body: `"${request.position_title}" shortlist has been ready for over 48 hours.`,
-              request_id: request.request_id,
-            },
-          });
+          try {
+            await requestNotification({
+              tenant_id: request.tenant_id,
+              event_type: HIRING_SHORTLIST_OVERDUE,
+              user_ids: [request.hr_owner],
+              source_event_id: eventId,
+              payload: {
+                title: 'Shortlist pending review',
+                body: `"${request.position_title}" shortlist has been ready for over 48 hours.`,
+                request_id: request.request_id,
+              },
+            });
+          } catch (notifError) {
+            console.error('Notification error for request', request.request_id, notifError);
+            // Don't fail the whole operation if notification fails
+          }
           notified++;
         });
       }
