@@ -934,8 +934,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
 
   app.post('/v1/jd/revise', async (c) => {
     try {
-      const { currentJdText, userFeedback, position, teamSkillGap, keyDeliverables } =
-        await c.req.json();
+      const { currentJdText, userFeedback, jdId: providedJdId } = await c.req.json();
 
       console.log('📨 POST /v1/jd/revise called');
 
@@ -949,19 +948,90 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         tenant_id: '550e8400-e29b-41d4-a716-446655440000',
         user_id: '550e8400-e29b-41d4-a716-446655440001',
       };
-      const result = await reviseJd({
-        currentDraft: String(currentJdText),
-        flaggedGaps: [],
-        jdId: 'temp',
-        tenantId: session.tenant_id,
-      });
 
-      console.log('✅ JD revised successfully');
+      const jdId = providedJdId || `JD-REVISE-${Date.now().toString().slice(-6)}`;
 
-      return c.json({
-        success: true,
-        revisedJdText: result.revisedText,
-        fullPrompt: result.fullPrompt,
+      return stream(c, async (writer) => {
+        try {
+          // Step 1: Revise the JD
+          console.log('✏️ Revising JD...');
+          const revisionResult = await reviseJd({
+            currentDraft: String(currentJdText),
+            flaggedGaps: [],
+            jdId,
+            tenantId: session.tenant_id,
+          });
+
+          const revisedJdText = revisionResult.revisedText;
+          console.log('✅ JD revised successfully');
+
+          // Stream the revised JD
+          const jdMessage = {
+            type: 'action',
+            content: revisedJdText,
+            metadata: {
+              revisedFromFeedback: userFeedback,
+            },
+          };
+          await writer.write(`data: ${JSON.stringify(jdMessage)}\n\n`);
+
+          // Step 2: Auto-score the revised JD
+          console.log('📊 Scoring revised JD...');
+          let scoreResult: any = null;
+
+          for await (const chunk of scoreJdStream({
+            jdId,
+            tenantId: session.tenant_id,
+            jdText: revisedJdText,
+          })) {
+            if (
+              chunk.type === 'text' ||
+              chunk.type === 'thinking-start' ||
+              chunk.type === 'thinking-end'
+            ) {
+              await writer.write(`data: ${JSON.stringify(chunk)}\n\n`);
+            } else if (chunk.type === 'complete' && chunk.data) {
+              scoreResult = chunk.data as any;
+            } else if (chunk.type === 'error') {
+              console.error('Scoring error:', (chunk as any).message);
+              scoreResult = {
+                clarityScore: 0,
+                status: 'Error',
+                categoryScores: {},
+                flaggedGaps: ['Scoring failed'],
+                requiredRevisions: [],
+                confidence: 'Low',
+              };
+            }
+          }
+
+          console.log(`✅ Revised JD Score: ${scoreResult.clarityScore}/100`);
+
+          // Stream the scoring result
+          const scoringContent = `## 📊 Quality Assessment
+
+**Clarity Score: ${scoreResult.clarityScore}/100** — ${scoreResult.status}`;
+
+          const scoringMessage = {
+            type: 'result',
+            content: scoringContent,
+            metadata: {
+              clarityScore: scoreResult.clarityScore,
+              status: scoreResult.status,
+              categoryScores: scoreResult.categoryScores,
+              flaggedGaps: scoreResult.flaggedGaps,
+              requiredRevisions: scoreResult.requiredRevisions,
+              confidence: scoreResult.confidence,
+            },
+          };
+
+          await writer.write(`data: ${JSON.stringify(scoringMessage)}\n\n`);
+        } catch (error) {
+          console.error('Revise/Score stream error:', error);
+          await writer.write(
+            `data: ${JSON.stringify({ type: 'error', content: `Revision failed: ${String(error)}` })}\n\n`,
+          );
+        }
       });
     } catch (error) {
       console.error('❌ Revise JD error:', error);
