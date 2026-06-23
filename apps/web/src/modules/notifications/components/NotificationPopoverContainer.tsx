@@ -11,6 +11,7 @@ import { useDismiss, useMarkAllRead, useMarkRead } from '../hooks/mutations';
 import { useNotifications } from '../hooks/useNotifications';
 import { useUnreadCount } from '../hooks/useUnreadCount';
 import { useResolveAgentNotification } from '../renderers/agent-renderers';
+import { useResolveHiringNotification } from '../renderers/hiring-renderers';
 
 export function NotificationPopoverContainer(): React.ReactElement {
   const [filter, setFilter] = React.useState<'all' | 'unread'>('all');
@@ -92,7 +93,8 @@ function PopoverRow({
 }): React.ReactElement {
   const planner = useResolvePlannerNotification(notification);
   const agent = useResolveAgentNotification(notification);
-  const { icon, onClick } = planner.icon ? planner : agent;
+  const hiring = useResolveHiringNotification(notification);
+  const { icon, onClick } = planner.icon ? planner : agent.icon ? agent : hiring;
   return (
     <NotificationListItem
       notification={notification}

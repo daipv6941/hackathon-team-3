@@ -3,7 +3,7 @@
 import { Button, Card, Input } from '@seta/shared-ui';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Plus, Trash2, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export const Route = createFileRoute('/_authed/hiring/candidates')({
   component: CandidatesPage,
@@ -48,50 +48,60 @@ function CandidatesPage() {
     status: 'active' as 'active' | 'inactive',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const loadedRef = useRef(false);
 
-  const loadCandidates = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const params = new URLSearchParams();
+  const loadCandidates = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        setIsLoading(true);
+        const params = new URLSearchParams();
 
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
+        if (statusFilter !== 'all') {
+          params.append('status', statusFilter);
+        }
+        if (nameSearch.trim()) {
+          params.append('name', nameSearch.trim());
+        }
+        if (skillSearch.trim()) {
+          params.append('skill', skillSearch.trim());
+        }
+        params.append('limit', String(pageSize));
+        params.append('offset', String(currentPage * pageSize));
+
+        const url = `/api/hiring/v1/candidates?${params.toString()}`;
+        const response = await fetch(url, {
+          method: 'GET',
+          credentials: 'include',
+          signal,
+        });
+
+        if (!response.ok) throw new Error('Failed to load candidates');
+
+        const data = await response.json();
+        if (signal?.aborted) return;
+        setCandidates(data.candidates || []);
+        setTotalCount(data.totalCandidates || 0);
+      } catch (error) {
+        if (signal?.aborted) return;
+        console.error('Load candidates error:', error);
+      } finally {
+        if (!signal?.aborted) {
+          setIsLoading(false);
+        }
       }
-      if (nameSearch.trim()) {
-        params.append('name', nameSearch.trim());
-      }
-      if (skillSearch.trim()) {
-        params.append('skill', skillSearch.trim());
-      }
-      params.append('limit', String(pageSize));
-      params.append('offset', String(currentPage * pageSize));
+    },
+    [statusFilter, nameSearch, skillSearch, currentPage],
+  );
 
-      const url = `/api/hiring/v1/candidates?${params.toString()}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      if (!response.ok) throw new Error('Failed to load candidates');
-
-      const data = await response.json();
-      setCandidates(data.candidates || []);
-      setTotalCount(data.totalCandidates || 0);
-    } catch (error) {
-      console.error('Load candidates error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [statusFilter, nameSearch, skillSearch, currentPage]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: ref prevents re-runs on loadCandidates changes
   useEffect(() => {
-    if (loadedRef.current) return;
-    loadedRef.current = true;
-    loadCandidates();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) {
+        loadCandidates(controller.signal);
+      }
+    });
+
+    return () => controller.abort();
+  }, [loadCandidates]);
 
   const handleAddCandidate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,7 +201,7 @@ function CandidatesPage() {
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={() => navigate({ to: '..' })}
+            onClick={() => navigate({ to: '/hiring/requests' })}
             className="flex items-center gap-2 text-sm text-primary hover:text-primary-dark"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -426,7 +436,7 @@ function CandidatesPage() {
                 }}
                 className={`px-3 py-1 rounded text-sm transition ${
                   statusFilter === status
-                    ? 'bg-primary text-primary-foreground'
+                    ? 'bg-primary text-white'
                     : 'bg-surface-2 text-ink hover:bg-surface-3'
                 }`}
               >
@@ -459,7 +469,7 @@ function CandidatesPage() {
                           : 'bg-gray-100 text-gray-700'
                       }`}
                     >
-                      {candidate.status}
+                      {candidate.status.charAt(0).toUpperCase() + candidate.status.slice(1)}
                     </span>
                   </div>
                   <p className="text-sm text-ink-subtle mb-3">

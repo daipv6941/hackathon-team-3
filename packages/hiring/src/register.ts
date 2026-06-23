@@ -4,6 +4,7 @@ import type { ContributionRegistry, RouteBuildDeps } from '@seta/core';
 import { HIRING_AGENT_TOOLS } from './agent-tools.ts';
 import * as schema from './backend/db/index.ts';
 import { buildHiringRoutes } from './backend/http/index.ts';
+import { hiringJobs } from './backend/jobs/shortlist-overdue-check.ts';
 import { mountHiringChatRoutes } from './backend/routes/chat.ts';
 import { buildMastra } from './backend/runtime.ts';
 import { HIRING_EVENTS } from './events/index.ts';
@@ -19,6 +20,8 @@ export function registerHiringContributions(reg: ContributionRegistry): void {
     rbac: hiringRbac,
     events: HIRING_EVENTS,
     agentTools: HIRING_AGENT_TOOLS,
+    jobs: hiringJobs,
+    crontab: '* * * * * hiring_shortlist_overdue_check',
     routes: {
       mountAt: '/api/hiring',
       build: (deps: RouteBuildDeps) => {
@@ -29,7 +32,7 @@ export function registerHiringContributions(reg: ContributionRegistry): void {
         });
 
         // Build and mount Mastra-powered chat routes
-        const app = buildHiringRoutes();
+        const app = buildHiringRoutes(deps.pool);
         // biome-ignore lint/suspicious/noExplicitAny: Hono's env generics are invariant; we cast to ensure type compatibility
         mountHiringChatRoutes(app as any, { mastra, pool: deps.pool });
 

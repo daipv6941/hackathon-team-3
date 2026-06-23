@@ -1,6 +1,14 @@
+import { coreEvents } from '@seta/core/db/schema';
+import { emit, withEmit } from '@seta/core/events';
+import { requestNotification } from '@seta/notifications';
+import { and, eq, gt, sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
+import type { Pool } from 'pg';
+import { HIRING_SHORTLIST_OVERDUE } from '../../events/index.ts';
+import * as schema from '../db/schema.ts';
 
-export function buildHiringRoutes() {
+export function buildHiringRoutes(pool?: Pool) {
   const app = new Hono();
 
   // NOTE: POST /v1/chat and GET /v1/jd are mounted by mountHiringChatRoutes() in register.ts
@@ -25,6 +33,80 @@ export function buildHiringRoutes() {
     } catch (error) {
       console.error('Candidates error:', error);
       return c.json({ error: 'Failed to fetch candidates' }, 500);
+    }
+  });
+
+  /**
+   * POST /v1/trigger-overdue-check
+   * Immediately notify all "Shortlist Ready" requests, bypassing the 48h threshold.
+   * Runs inline (no job queue) so the caller sees the effect within seconds.
+   */
+  app.post('/v1/trigger-overdue-check', async (c) => {
+    if (!pool) return c.json({ error: 'Pool not available' }, 503);
+    try {
+      const db = drizzle(pool, { schema });
+      const overdueRequests = await db
+        .select({
+          request_id: schema.hiringRequests.request_id,
+          tenant_id: schema.hiringRequests.tenant_id,
+          hr_owner: schema.hiringRequests.hr_owner,
+          position_title: schema.hiringRequests.position_title,
+          updated_at: schema.hiringRequests.updated_at,
+        })
+        .from(schema.hiringRequests)
+        .where(eq(schema.hiringRequests.request_status, 'Shortlist Ready'));
+
+      let notified = 0;
+      for (const request of overdueRequests) {
+        await withEmit(undefined, async (tx) => {
+          // Skip if already notified in the last 5 minutes (prevents button spam)
+          const recent = await tx
+            .select({ id: coreEvents.id })
+            .from(coreEvents)
+            .where(
+              and(
+                eq(coreEvents.eventType, HIRING_SHORTLIST_OVERDUE),
+                eq(coreEvents.aggregateId, request.request_id),
+                gt(coreEvents.occurredAt, sql`NOW() - INTERVAL '5 minutes'`),
+              ),
+            )
+            .limit(1);
+
+          if (recent.length > 0) return;
+
+          const { eventId } = await emit({
+            tenantId: request.tenant_id,
+            aggregateType: 'hiring.request',
+            aggregateId: request.request_id,
+            eventType: HIRING_SHORTLIST_OVERDUE,
+            eventVersion: 1,
+            payload: {
+              request_id: request.request_id,
+              tenant_id: request.tenant_id,
+              hr_owner: request.hr_owner,
+              position_title: request.position_title,
+              overdue_since: request.updated_at.toISOString(),
+            },
+          });
+          await requestNotification({
+            tenant_id: request.tenant_id,
+            event_type: HIRING_SHORTLIST_OVERDUE,
+            user_ids: [request.hr_owner],
+            source_event_id: eventId,
+            payload: {
+              title: 'Shortlist pending review',
+              body: `"${request.position_title}" shortlist has been ready for over 48 hours.`,
+              request_id: request.request_id,
+            },
+          });
+          notified++;
+        });
+      }
+
+      return c.json({ ok: true, notified });
+    } catch (error) {
+      console.error('Trigger overdue check error:', error);
+      return c.json({ error: 'Failed to trigger notifications' }, 500);
     }
   });
 
