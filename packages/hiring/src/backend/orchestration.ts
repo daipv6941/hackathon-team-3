@@ -231,15 +231,15 @@ export async function fetchContext(
         position: request.position_title,
         teamSkillGap: request.team_skill_gap_summary || '',
         keyDeliverables: request.key_deliverables || '',
-        salaryRange: request.salary_range || 'Competitive',
-        seniorityLevel: request.seniority_level || 'Senior',
-        urgency: request.urgency_level || 'Medium',
-        headcount: request.headcount_requested || 1,
-        teamName: request.team_name || 'Engineering',
+        salaryRange: request.salary_range || '',
+        seniorityLevel: request.seniority_level || '',
+        urgency: request.urgency_level || '',
+        headcount: request.headcount_requested || 0,
+        teamName: request.team_name || '',
         businessContext: request.business_justification || '',
-        workMode: request.work_mode || 'Hybrid',
-        yoe: request.min_yoe?.toString() || '3',
-        englishLevel: request.english_level_required || 'B2',
+        workMode: request.work_mode || '',
+        yoe: request.min_yoe?.toString() || '',
+        englishLevel: request.english_level_required || '',
         benefits: request.benefits || '',
         reportingLine: '',
       };
@@ -263,14 +263,14 @@ export async function fetchContext(
     teamSkillGap: request.teamSkillGap,
     keyDeliverables: request.keyDeliverables,
     salaryRange: request.salaryRange,
-    seniorityLevel: request.seniorityLevel || 'Senior',
-    urgency: 'Medium',
-    headcount: 1,
-    teamName: request.team || 'Engineering',
+    seniorityLevel: request.seniorityLevel || '',
+    urgency: '',
+    headcount: 0,
+    teamName: request.team || '',
     businessContext: '',
-    workMode: 'Hybrid',
-    yoe: '3',
-    englishLevel: 'B2',
+    workMode: '',
+    yoe: '',
+    englishLevel: '',
     benefits: '',
     reportingLine: '',
   };
@@ -292,18 +292,18 @@ INPUT DATA
 =========================
 POSITION:          ${input.position}
 SENIORITY:         ${input.seniorityLevel}
-HEADCOUNT:         ${input.headcount || '[HR to specify]'}
-URGENCY:           ${input.urgency || '[HR to specify]'}
-TEAM_NAME:         ${input.teamName || '[HR to specify]'}
-BUSINESS_CONTEXT:  ${input.businessContext || '[HR to specify: why this hire, business driver]'}
+HEADCOUNT:         ${input.headcount}
+URGENCY:           ${input.urgency}
+TEAM_NAME:         ${input.teamName}
+BUSINESS_CONTEXT:  ${input.businessContext}
 TEAM_SKILL_GAP:    ${input.teamSkillGap}
 KEY_DELIVERABLES:  ${input.keyDeliverables}
-SALARY_RANGE:      ${input.salaryRange}/month
-WORK_MODE:         ${input.workMode || '[HR to specify]'}
-YOE:               ${input.yoe || '[HR to specify: years of experience required]'}
-ENGLISH_LEVEL:     ${input.englishLevel || '[HR to specify: A1-C2]'}
-BENEFITS:          ${input.benefits || '[Per company policy — HR to specify]'}
-REPORTING_LINE:    ${input.reportingLine || '[HR to specify]'}
+SALARY_RANGE:      ${input.salaryRange}
+WORK_MODE:         ${input.workMode}
+YOE:               ${input.yoe}
+ENGLISH_LEVEL:     ${input.englishLevel}
+BENEFITS:          ${input.benefits}
+REPORTING_LINE:    ${input.reportingLine}
 
 =========================
 HARD RULES (violation = JD rejected)
@@ -349,19 +349,19 @@ Example: "3+ years hands-on ML engineering (production, not Kaggle-only)"]
 Example: "LLM fine-tuning: LoRA, QLoRA — accelerates model customization"]
 
 ### Requirements
-- **Years of Experience**: ${input.yoe || '[HR to specify: years in relevant role]'} + seniority-appropriate depth
-- **English Level**: ${input.englishLevel || '[HR to specify: A1-C2]'} [explain why job-critical if applicable]
-- **Work Mode**: ${input.workMode || '[HR to specify: Remote/Hybrid/On-site]'}
+- **Years of Experience**: ${input.yoe}
+- **English Level**: ${input.englishLevel}
+- **Work Mode**: ${input.workMode}
 
 ### Offer
-- **Salary**: ${input.salaryRange || '[Negotiable]'}${input.workMode ? `\n- **Work Mode**: ${input.workMode}` : ''}
+- **Salary**: ${input.salaryRange}${input.workMode ? `\n- **Work Mode**: ${input.workMode}` : ''}
 ${
   input.benefits
     ? `- **Benefits**:\n${input.benefits
         .split('\n')
         .map((b) => `  - ${b}`)
         .join('\n')}`
-    : '- **Benefits**: [Per company policy — HR to specify]'
+    : ''
 }
 
 =========================
@@ -408,10 +408,10 @@ export async function* draftJdStream(input: z.infer<typeof DraftJdInputSchema>) 
 HIRING CONTEXT:
 - Position: ${input.position}
 - Seniority Level: ${input.seniorityLevel}
-- Headcount: ${input.headcount || 1}
-- Urgency: ${input.urgency || 'Medium'}
-- Team: ${input.teamName || 'Engineering'}
-- Business Context: ${input.businessContext || 'Not provided'}
+- Headcount: ${input.headcount || ''}
+- Urgency: ${input.urgency || ''}
+- Team: ${input.teamName || ''}
+- Business Context: ${input.businessContext || ''}
 
 KEY CONTEXT:
 - Team Skill Gap: ${input.teamSkillGap}
@@ -419,9 +419,9 @@ KEY CONTEXT:
 
 REQUIREMENTS:
 - Salary Range: ${input.salaryRange}
-- Work Mode: ${input.workMode || 'Hybrid'}
-- Years of Experience: ${input.yoe || '3'}+
-- English Level: ${input.englishLevel || 'B2'}
+- Work Mode: ${input.workMode || ''}
+- Years of Experience: ${input.yoe || ''}
+- English Level: ${input.englishLevel || ''}
 
 Generate a professional, screening-ready Job Description for this role.`;
 
@@ -1184,6 +1184,9 @@ export interface ExtractedRequestDetails {
   nice_to_have_skills?: string[];
   onboarding_timeline?: string;
   responsibilities?: string[];
+  work_mode?: string;
+  english_level_required?: string;
+  benefits?: string;
   missing_fields: string[];
   fullPrompt: string;
 }
@@ -1212,6 +1215,8 @@ Extract these fields and return a valid JSON object. Use null for any missing fi
   "urgency_level": "one of: Low, Medium, High, Critical",
   "headcount_requested": "number of positions needed",
   "salary_range": "salary range string",
+  "work_mode": "one of: Remote, Hybrid, On-site",
+  "english_level_required": "one of: A1, A2, B1, B2, C1, C2",
   "onboarding_timeline": "timeline string like '4-6 weeks' or 'ASAP'",
   "business_justification": "why this hire is needed",
   "team_skill_gap_summary": "skills the team lacks",
@@ -1219,7 +1224,8 @@ Extract these fields and return a valid JSON object. Use null for any missing fi
   "responsibilities": ["list", "of", "individual", "responsibilities"],
   "preferred_tech_stack": ["PHP", "React", "MySQL"],
   "required_skills": ["must-have", "skills"],
-  "nice_to_have_skills": ["nice-to-have", "skills"]
+  "nice_to_have_skills": ["nice-to-have", "skills"],
+  "benefits": "benefits offered or null"
 }
 
 ENUM VALUES ONLY:
@@ -1268,6 +1274,9 @@ Return ONLY valid JSON, no markdown, no extra text.`;
         ? parsed.nice_to_have_skills.filter((s: unknown): s is string => typeof s === 'string')
         : undefined,
       onboarding_timeline: parsed.onboarding_timeline || undefined,
+      work_mode: parsed.work_mode || undefined,
+      english_level_required: parsed.english_level_required || undefined,
+      benefits: parsed.benefits || undefined,
     };
     console.log('✅ Extracted details:', extracted);
   } catch (e) {
@@ -1275,11 +1284,27 @@ Return ONLY valid JSON, no markdown, no extra text.`;
     console.error('Response text was:', result.text);
   }
 
-  // Identify missing required fields
+  // Identify missing required and important fields
+  // REQUIRED (must have): position_title, team_name, key_deliverables
+  // HIGH importance (should ask): urgency_level, seniority_level, min_yoe
+  // MEDIUM importance (should ask): salary_range, headcount_requested, work_mode, english_level_required, responsibilities, team_skill_gap_summary, business_justification
   const required = ['position_title', 'team_name', 'key_deliverables'];
-  const missing_fields = required.filter(
-    (field) => !extracted[field as keyof ExtractedRequestDetails],
-  );
+  const highImportance = ['urgency_level', 'seniority_level', 'min_yoe'];
+  const mediumImportance = [
+    'salary_range',
+    'headcount_requested',
+    'work_mode',
+    'english_level_required',
+    'responsibilities',
+    'team_skill_gap_summary',
+    'business_justification',
+  ];
+
+  const missing_fields = [
+    ...required.filter((field) => !extracted[field as keyof ExtractedRequestDetails]),
+    ...highImportance.filter((field) => !extracted[field as keyof ExtractedRequestDetails]),
+    ...mediumImportance.filter((field) => !extracted[field as keyof ExtractedRequestDetails]),
+  ];
 
   return {
     ...extracted,

@@ -31,7 +31,7 @@ export const hiringRequests = hiringSchema.table('requests', {
   work_mode: varchar('work_mode', { length: 20 }), // Remote, Hybrid, On-site
   min_yoe: integer('min_yoe'), // Minimum years of experience
   max_yoe: integer('max_yoe'), // Maximum years of experience (optional)
-  english_level_required: varchar('english_level_required', { length: 5 }), // A1-C2
+  english_level_required: varchar('english_level_required', { length: 50 }), // A1-C2 or custom (TOEIC, IELTS, etc)
   preferred_tech_stack: jsonb('preferred_tech_stack'), // Array of preferred technologies/frameworks
   required_skills: jsonb('required_skills'), // Array of required skills
   nice_to_have_skills: jsonb('nice_to_have_skills'), // Array of nice-to-have skills
@@ -59,7 +59,7 @@ export const hiringJobs = hiringSchema.table('jobs', {
   max_yoe: integer('max_yoe'),
   must_have_skills: text('must_have_skills'),
   nice_to_have_skills: text('nice_to_have_skills'),
-  english_level_required: varchar('english_level_required', { length: 5 }), // A1, A2, B1, B2, C1, C2
+  english_level_required: varchar('english_level_required', { length: 50 }), // A1, A2, B1, B2, C1, C2 or custom
   work_mode: varchar('work_mode', { length: 20 }), // Hybrid, Remote, On-site
   salary_range: varchar('salary_range', { length: 50 }),
   key_responsibilities: text('key_responsibilities'),
