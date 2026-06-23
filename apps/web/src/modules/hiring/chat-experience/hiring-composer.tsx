@@ -47,6 +47,9 @@ export function HiringComposer() {
             team_description: data.team_description,
             onboarding_timeline: data.onboarding_timeline,
             responsibilities: data.responsibilities,
+            work_mode: data.work_mode,
+            english_level_required: data.english_level_required,
+            benefits: data.benefits,
           }),
         });
 
@@ -304,10 +307,12 @@ export function HiringComposer() {
       position_title: 'What is the position title?',
       team_name: 'Which team is this for?',
       team_description: 'Can you describe the team and what they do?',
-      seniority_level: 'What seniority level? (Junior/Mid/Senior/Manager)',
+      seniority_level: 'What seniority level? (Intern/Junior/Mid/Senior/Manager/C-level)',
       min_yoe: 'How many years of experience minimum? (e.g., 5)',
       headcount_requested: 'How many positions to fill?',
       salary_range: 'What is the salary range?',
+      work_mode: 'What is the work mode? (Remote/Hybrid/On-site)',
+      english_level_required: 'What English level is required? (A1/A2/B1/B2/C1/C2)',
       urgency_level: 'What is the urgency? (Low/Medium/High/Critical)',
       onboarding_timeline: 'When do you need them onboarded? (e.g., 4-6 weeks)',
       team_skill_gap_summary: 'What are the team skill gaps you want to fill?',
@@ -316,6 +321,8 @@ export function HiringComposer() {
       preferred_tech_stack: 'What technologies/stack do you prefer? (e.g., React, Node.js, AWS)',
       required_skills: 'What are the required skills?',
       nice_to_have_skills: 'What are nice-to-have skills?',
+      benefits: 'What benefits are offered for this position?',
+      responsibilities: 'What are the key responsibilities?',
     };
 
     const label = fieldLabels[nextField] || `Tell me about ${nextField}:`;
@@ -371,6 +378,8 @@ export function HiringComposer() {
 **Seniority Level:** ${data.seniority_level || 'TBD'}
 **Years of Experience:** ${yoeInfo}
 **Urgency:** ${data.urgency_level || 'Medium'}
+**Work Mode:** ${data.work_mode || 'Not specified'}
+**English Level:** ${data.english_level_required || 'Not specified'}
 **Onboarding Timeline:** ${String(data.onboarding_timeline) || 'ASAP'}
 **Salary Range:** ${data.salary_range || 'TBD'}
 
@@ -391,6 +400,9 @@ ${techStack}
 
 **Team Skill Gaps:**
 ${String(data.team_skill_gap_summary) || 'TBD'}
+
+**Benefits:**
+${String(data.benefits) || 'Not specified'}
 
 **Business Justification:**
 ${String(data.business_justification) || 'TBD'}

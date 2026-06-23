@@ -501,14 +501,14 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       const parseEnglishLevel = (text: string): string => {
         let match = text.match(/(?:English|Fluent in English)[:\s]*\(?([A-Z]\d)/i);
         if (!match) match = text.match(/English Level[:\s]*([A-Z]\d)/i);
-        return match ? match[1]! : 'B2';
+        return match?.[1] ?? 'B2';
       };
 
       const parseSalaryRange = (text: string): string => {
         const match = text.match(/\*\*Salary Range:\*\*\s*([^\n]+)/i);
         if (!match) return 'Negotiable';
-        const range = match[1]!.trim();
-        return range.length > 50 ? range.substring(0, 47) + '...' : range;
+        const range = match[1]?.trim();
+        return !range ? 'Negotiable' : range.length > 50 ? range.substring(0, 47) + '...' : range;
       };
 
       const parseResponsibilities = (text: string): string => {
@@ -517,7 +517,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         if (!match) match = text.match(/### Responsibilities?\n([\s\S]*?)(?=###|$)/i);
         if (!match) return '';
 
-        return match[1]!
+        return (match[1] ?? '')
           .split('\n')
           .filter((line) => line.trim().startsWith('-'))
           .map((line) => line.replace(/^-\s*/, '').trim())
@@ -870,8 +870,38 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             : undefined,
           salary_range: body.salary_range,
           work_mode: body.work_mode,
-          min_yoe: body.min_yoe ? parseInt(String(body.min_yoe), 10) : undefined,
-          max_yoe: body.max_yoe ? parseInt(String(body.max_yoe), 10) : undefined,
+          min_yoe: (() => {
+            if (!body.min_yoe) return undefined;
+            const minYoeStr = String(body.min_yoe).trim().toLowerCase();
+            // Handle common non-numeric inputs
+            if (
+              minYoeStr.includes('no need') ||
+              minYoeStr === 'none' ||
+              minYoeStr === 'n/a' ||
+              minYoeStr === ''
+            ) {
+              return undefined; // Set to NULL in database
+            }
+            // Try to parse as number
+            const parsed = parseInt(minYoeStr, 10);
+            return Number.isNaN(parsed) ? undefined : parsed;
+          })(),
+          max_yoe: (() => {
+            if (!body.max_yoe) return undefined;
+            const maxYoeStr = String(body.max_yoe).trim().toLowerCase();
+            // Handle common non-numeric inputs
+            if (
+              maxYoeStr.includes('no need') ||
+              maxYoeStr === 'none' ||
+              maxYoeStr === 'n/a' ||
+              maxYoeStr === ''
+            ) {
+              return undefined; // Set to NULL in database
+            }
+            // Try to parse as number
+            const parsed = parseInt(maxYoeStr, 10);
+            return Number.isNaN(parsed) ? undefined : parsed;
+          })(),
           english_level_required: body.english_level_required,
           preferred_tech_stack: Array.isArray(body.preferred_tech_stack)
             ? body.preferred_tech_stack
@@ -881,6 +911,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             ? body.nice_to_have_skills
             : undefined,
           onboarding_timeline: body.onboarding_timeline,
+          benefits: body.benefits,
           hr_owner: session.user_id,
           request_status: 'New',
         })
