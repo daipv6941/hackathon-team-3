@@ -386,7 +386,7 @@ OUTPUT ONLY: Complete JD in Markdown format. Do not include this checklist or an
   const result = await generateText({
     model,
     prompt,
-    temperature: 0.7,
+    temperature: 0.5,
   });
 
   return {
@@ -428,7 +428,7 @@ Generate a professional, screening-ready Job Description for this role.`;
   const stream = streamText({
     model,
     prompt,
-    temperature: 0.7,
+    temperature: 0.5,
   });
 
   let fullText = '';
@@ -700,7 +700,7 @@ ${input.jdText}`;
   const stream = streamText({
     model,
     prompt,
-    temperature: 0.5,
+    temperature: 0,
   });
 
   let fullText = '';
@@ -1435,7 +1435,7 @@ Return ONLY valid JSON array (no markdown, no code blocks):
   const stream = streamText({
     model,
     prompt,
-    temperature: 0.5,
+    temperature: 0,
   });
 
   let fullText = '';
