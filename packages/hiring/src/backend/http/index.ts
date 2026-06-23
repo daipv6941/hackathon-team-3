@@ -1,4 +1,4 @@
-import { coreEvents } from '@seta/core/db/schema';
+import { coreEvents } from '@seta/core';
 import { emit, withEmit } from '@seta/core/events';
 import { requestNotification } from '@seta/notifications';
 import { and, eq, gt, sql } from 'drizzle-orm';
