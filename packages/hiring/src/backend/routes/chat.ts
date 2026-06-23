@@ -444,6 +444,10 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       }
 
       const db = getDb();
+      const session = c.get('user') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
       const timestamp = Date.now().toString().slice(-6);
       const jdId = `JD-${requestId.replace('REQ-', '')}-${timestamp}`;
 
@@ -542,7 +546,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       });
 
       await db.insert(schema.hiringJobs).values({
-        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        tenant_id: session.tenant_id,
         jd_id: jdId,
         request_id: requestId,
         position,
@@ -589,6 +593,10 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
     try {
       const { requestId, jdId } = await c.req.json();
       const db = getDb();
+      const session = c.get('user') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
 
       if (!requestId || !jdId) {
         return c.json({ error: 'requestId and jdId required' }, 400);
@@ -632,7 +640,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
           const results = await screenManyCvs({
             jdId,
             requestId,
-            tenantId: '550e8400-e29b-41d4-a716-446655440000',
+            tenantId: session.tenant_id,
             position: jd.position || 'Unknown Position',
             seniorityLevel: jd.seniority_level || 'Mid-Level',
             minYoe: jd.min_yoe || 0,
@@ -686,7 +694,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
             try {
               const candidateData = activeCandidates.find((c) => c.cv_id === result.cvId);
               await db.insert(schema.hiringShortlistResults).values({
-                tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+                tenant_id: session.tenant_id,
                 request_id: requestId,
                 jd_id: jdId,
                 cv_id: result.cvId,
@@ -937,11 +945,15 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
 
       console.log('🔄 Revising JD based on user feedback...');
 
+      const session = c.get('user') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
       const result = await reviseJd({
         currentDraft: String(currentJdText),
         flaggedGaps: [],
         jdId: 'temp',
-        tenantId: '550e8400-e29b-41d4-a716-446655440000',
+        tenantId: session.tenant_id,
       });
 
       console.log('✅ JD revised successfully');
@@ -1238,6 +1250,10 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
     try {
       const { cvId, jdId, requestId } = await c.req.json();
       const db = getDb();
+      const session = c.get('user') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
 
       if (!cvId || !jdId || !requestId) {
         return c.json({ error: 'cvId, jdId, and requestId required' }, 400);
@@ -1263,7 +1279,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
         cvId,
         jdId,
         requestId,
-        tenantId: '550e8400-e29b-41d4-a716-446655440000',
+        tenantId: session.tenant_id,
         candidateName: candidate.full_name,
         cvSkills: candidate.cv_skills || '',
         yearsOfExperience: candidate.years_of_experience || 0,
@@ -1275,7 +1291,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       });
 
       await db.insert(schema.hiringShortlistResults).values({
-        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        tenant_id: session.tenant_id,
         request_id: requestId,
         jd_id: jdId,
         cv_id: cvId,
@@ -1506,6 +1522,10 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
   app.post('/v1/candidates', async (c) => {
     try {
       const db = getDb();
+      const session = c.get('user') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
       const body = (await c.req.json()) as Record<string, unknown>;
 
       const cvId = body.cvId as string | undefined;
@@ -1535,7 +1555,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       const newCandidate = await db
         .insert(schema.hiringCandidates)
         .values({
-          tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+          tenant_id: session.tenant_id,
           cv_id: cvId,
           candidate_id: candidateId,
           full_name: fullName,
@@ -1580,6 +1600,10 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
   app.post('/v1/candidates/seed/test-data', async (c) => {
     try {
       const db = getDb();
+      const session = c.get('user') ?? {
+        tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+        user_id: '550e8400-e29b-41d4-a716-446655440001',
+      };
       const skills = [
         'React,TypeScript,Node.js',
         'Python,Django,PostgreSQL',
@@ -1624,7 +1648,7 @@ Generated in ${iteration - 1} iteration${iteration - 1 !== 1 ? 's' : ''} (${scor
       const candidates = [];
       for (let i = 1; i <= 20; i++) {
         candidates.push({
-          tenant_id: '550e8400-e29b-41d4-a716-446655440000',
+          tenant_id: session.tenant_id,
           cv_id: `CV_${String(i).padStart(3, '0')}`,
           candidate_id: `CAND_${String(i).padStart(3, '0')}`,
           full_name: `Candidate ${i}`,

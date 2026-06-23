@@ -8,7 +8,7 @@ import { hiringDb } from '../db/client.ts';
 import { hiringRequests } from '../db/schema.ts';
 
 export const hiringJobs: TaskList = {
-  'hiring.shortlist_overdue_check': async () => {
+  hiring_shortlist_overdue_check: async () => {
     const db = hiringDb();
 
     const overdueRequests = await db
