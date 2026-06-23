@@ -1,6 +1,6 @@
 import { coreEvents } from '@seta/core';
 import { emit, withEmit } from '@seta/core/events';
-import { requestNotification } from '@seta/notifications';
+import { NOTIFICATION_REQUESTED, NOTIFICATION_REQUESTED_VERSION } from '@seta/notifications';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
@@ -88,22 +88,23 @@ export function buildHiringRoutes(pool?: Pool) {
               overdue_since: request.updated_at.toISOString(),
             },
           });
-          try {
-            await requestNotification({
-              tenant_id: request.tenant_id,
-              event_type: HIRING_SHORTLIST_OVERDUE,
-              user_ids: [request.hr_owner],
-              source_event_id: eventId,
-              payload: {
+          await emit({
+            tenantId: request.tenant_id,
+            aggregateType: 'notification',
+            aggregateId: eventId,
+            eventType: NOTIFICATION_REQUESTED,
+            eventVersion: NOTIFICATION_REQUESTED_VERSION,
+            payload: {
+              target_event_type: HIRING_SHORTLIST_OVERDUE,
+              target_payload: {
                 title: 'Shortlist pending review',
                 body: `"${request.position_title}" shortlist has been ready for over 48 hours.`,
                 request_id: request.request_id,
               },
-            });
-          } catch (notifError) {
-            console.error('Notification error for request', request.request_id, notifError);
-            // Don't fail the whole operation if notification fails
-          }
+              user_ids: [request.hr_owner],
+              source_event_id: eventId,
+            },
+          });
           notified++;
         });
       }
