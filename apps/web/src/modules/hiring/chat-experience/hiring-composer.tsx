@@ -320,7 +320,8 @@ export function HiringComposer() {
       business_justification: 'What is the business justification for this hire?',
       preferred_tech_stack: 'What technologies/stack do you prefer? (e.g., React, Node.js, AWS)',
       required_skills: 'What are the required skills?',
-      nice_to_have_skills: 'What are nice-to-have skills?',
+      nice_to_have_skills:
+        'What are nice-to-have skills? (optional — you can skip if not applicable)',
       benefits: 'What benefits are offered for this position?',
       responsibilities: 'What are the key responsibilities?',
     };

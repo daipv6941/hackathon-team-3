@@ -1288,6 +1288,7 @@ Return ONLY valid JSON, no markdown, no extra text.`;
   // REQUIRED (must have): position_title, team_name, key_deliverables
   // HIGH importance (should ask): urgency_level, seniority_level, min_yoe
   // MEDIUM importance (should ask): salary_range, headcount_requested, work_mode, english_level_required, responsibilities, team_skill_gap_summary, business_justification
+  // LOW importance (should ask): required_skills, nice_to_have_skills (optional)
   const required = ['position_title', 'team_name', 'key_deliverables'];
   const highImportance = ['urgency_level', 'seniority_level', 'min_yoe'];
   const mediumImportance = [
@@ -1299,11 +1300,13 @@ Return ONLY valid JSON, no markdown, no extra text.`;
     'team_skill_gap_summary',
     'business_justification',
   ];
+  const lowImportance = ['required_skills', 'nice_to_have_skills'];
 
   const missing_fields = [
     ...required.filter((field) => !extracted[field as keyof ExtractedRequestDetails]),
     ...highImportance.filter((field) => !extracted[field as keyof ExtractedRequestDetails]),
     ...mediumImportance.filter((field) => !extracted[field as keyof ExtractedRequestDetails]),
+    ...lowImportance.filter((field) => !extracted[field as keyof ExtractedRequestDetails]),
   ];
 
   return {
